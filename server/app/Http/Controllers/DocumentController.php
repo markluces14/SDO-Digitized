@@ -6,20 +6,28 @@ use App\Models\{Document, Employee, Tag};
 use Illuminate\Http\Request;
 use App\Http\Requests\StoreDocumentRequest;
 use Illuminate\Support\Facades\{Auth, Storage, File};
+use App\Support\Audit;
 
 class DocumentController extends Controller
 {
+    private string $disk = 'local';
+
     private function ensureEmployeeOwns(Request $r, int $employeeId): void
     {
         $u = $r->user();
-        if ($u->role === 'employee') {
-            abort_if(optional($u->employee)->id !== $employeeId, 403);
+        if ($u && $u->role === 'employee') {
+            abort_if((int)optional($u->employee)->id !== (int)$employeeId, 403);
         }
     }
+
+    /**
+     * Upload a document (employees limited to own).
+     */
     public function store(StoreDocumentRequest $r)
     {
         $user = $r->user();
-        $employeeId = (int) $r->input('employee_id');
+        $employeeId = (int)$r->input('employee_id');
+
         $this->ensureEmployeeOwns($r, $employeeId);
 
         if ($user?->role === 'employee' && (int)$user->employee_id !== $employeeId) {
@@ -27,12 +35,14 @@ class DocumentController extends Controller
         }
 
         $file = $r->file('file');
-        $path = $file->store("documents/{$employeeId}");
+
+        // IMPORTANT: store on consistent disk
+        $path = $file->store("documents/{$employeeId}", $this->disk);
         $hash = hash_file('sha256', $file->getRealPath());
 
         $doc = Document::create([
             'employee_id' => $employeeId,
-            'title'       => (string) $r->input('title'),
+            'title'       => (string)$r->input('title'),
             'path'        => $path,
             'hash'        => $hash,
             'issued_at'   => $r->input('issued_at') ?: null,
@@ -42,10 +52,21 @@ class DocumentController extends Controller
 
         if ($r->filled('tags')) {
             $ids = collect($r->input('tags', []))
-                ->map(fn($t) => Tag::firstOrCreate(['name' => trim($t)])->id)
+                ->map(fn($t) => Tag::firstOrCreate(['name' => trim((string)$t)])->id)
                 ->all();
             $doc->tags()->sync($ids);
         }
+
+        // AUDIT: upload
+        Audit::log($r, 'upload', [
+            'employee_id' => $employeeId,
+            'document_id' => $doc->id,
+            'meta' => [
+                'title' => $doc->title,
+                'path'  => $doc->path,
+                'hash'  => $doc->hash,
+            ],
+        ]);
 
         return response()->json($doc->load('tags'), 201);
     }
@@ -57,12 +78,15 @@ class DocumentController extends Controller
     {
         $this->ensureEmployeeOwns($r, $employee->id);
 
-        return $employee->documents()
-            ->withTrashed()
-            ->with('tags')
-            ->latest()
-            ->paginate(20);
+        $q = $employee->documents()->with('tags');
+
+        if ($r->boolean('with_trashed')) {
+            $q->withTrashed();
+        }
+
+        return $q->latest()->paginate(20);
     }
+
 
     /**
      * Search documents (admins/staff unrestricted; employees restricted to own).
@@ -73,24 +97,28 @@ class DocumentController extends Controller
 
         $q = Document::with(['employee', 'tags']);
 
+        // Restrict employees first
         if ($user?->role === 'employee') {
             $q->where('employee_id', (int)$user->employee_id);
         }
 
+        // IMPORTANT: group OR conditions so they don't escape the employee restriction
         if ($r->filled('q')) {
             $term = '%' . $r->q . '%';
-            $q->where('title', 'like', $term)
-                ->orWhereHas('employee', fn($x) => $x
-                    ->where('last_name',  'like', $term)
-                    ->orWhere('first_name', 'like', $term))
-                ->orWhereHas('tags', fn($x) => $x->where('name', 'like', $term));
+            $q->where(function ($w) use ($term) {
+                $w->where('title', 'like', $term)
+                    ->orWhereHas('employee', fn($x) => $x
+                        ->where('last_name', 'like', $term)
+                        ->orWhere('first_name', 'like', $term))
+                    ->orWhereHas('tags', fn($x) => $x->where('name', 'like', $term));
+            });
         }
 
         if ($r->filled('employee_id')) {
             if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$r->employee_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
-            $q->where('employee_id', $r->employee_id);
+            $q->where('employee_id', (int)$r->employee_id);
         }
 
         return $q->latest()->paginate(20);
@@ -106,8 +134,7 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $disk = 'local';
-        $fs   = Storage::disk($disk);
+        $fs = Storage::disk($this->disk);
 
         if (!$fs->exists($document->path)) {
             abort(404, 'File not found.');
@@ -119,19 +146,39 @@ class DocumentController extends Controller
         $ext  = pathinfo($document->path, PATHINFO_EXTENSION);
         $name = trim($base . ' - ' . ($document->title ?: 'file')) . ($ext ? ".{$ext}" : '');
 
-        // Let Storage stream it; add a sane content-type if you want
-        $mime = File::mimeType($fs->path($document->path)) ?? 'application/octet-stream';
-        return Storage::response($document->path, $name, [
-            'Content-Type' => $mime,
-            // Stream inline
-            'Content-Disposition' => 'inline; filename="' . $name . '"; filename*=UTF-8\'\'' . rawurlencode($name),
+        // AUDIT: view
+        Audit::log($r, 'view', [
+            'employee_id' => $document->employee_id,
+            'document_id' => $document->id,
+            'meta' => [
+                'title' => $document->title,
+                'path'  => $document->path,
+            ],
         ]);
+
+        $mime = File::mimeType($fs->path($document->path)) ?? 'application/octet-stream';
+
+        // Use the local filesystem path and Laravel's response()->file to stream inline
+        return response()->file(
+            $fs->path($document->path),
+            [
+                'Content-Type' => $mime,
+                'Content-Disposition' => 'inline; filename="' . $name . '"; filename*=UTF-8\'\'' . rawurlencode($name),
+            ]
+        );
     }
 
-    public function download(Document $document)
+    /**
+     * Download file (employees limited to their own).
+     */
+    public function download(Document $document, Request $r)
     {
-        $disk = 'local';
-        $fs   = Storage::disk($disk);
+        $user = $r->user();
+        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $fs = Storage::disk($this->disk);
 
         if (!$fs->exists($document->path)) {
             abort(404, 'File not found.');
@@ -142,8 +189,21 @@ class DocumentController extends Controller
         $ext  = pathinfo($document->path, PATHINFO_EXTENSION);
         $name = trim($base . ' - ' . ($document->title ?: 'file')) . ($ext ? ".{$ext}" : '');
 
-        // Force download with a proper filename (also provides the Content-Disposition header)
-        return Storage::download($document->path, $name);
+        // AUDIT: download
+        Audit::log($r, 'download', [
+            'employee_id' => $document->employee_id,
+            'document_id' => $document->id,
+            'meta' => [
+                'title' => $document->title,
+                'path'  => $document->path,
+            ],
+        ]);
+
+        // Avoid IDE warnings + works for local disk
+        return response()->download(
+            $fs->path($document->path),
+            $name
+        );
     }
 
     /**
@@ -156,28 +216,71 @@ class DocumentController extends Controller
 
         // Employees may only delete their own documents
         $user = $r->user();
-        if ($user && $user->role === 'employee') {
-            if ((int)$user->employee_id !== (int)$document->employee_id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // AUDIT: delete
+        Audit::log($r, 'delete', [
+            'employee_id' => $document->employee_id,
+            'document_id' => $document->id,
+            'meta' => [
+                'title' => $document->title,
+                'path'  => $document->path,
+            ],
+        ]);
+
         $document->delete();
-        return response()->noContent(); // 204
+        return response()->noContent();
     }
+
     /**
      * Restore soft-deleted document (admins/staff; employee only own).
      */
-    public function restore($id, Request $r)
+    public function restore(Request $r, Document $document)
     {
-        $doc  = Document::withTrashed()->findOrFail($id);
-        $user = $r->user();
+        // NOTE: route-model binding with soft deletes needs withTrashed in route binding
+        // If this fails to find trashed docs, use restoreById instead (see below).
 
+        $user = $r->user();
+        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (method_exists($document, 'trashed') && !$document->trashed()) {
+            return response()->json(['message' => 'Document is not deleted.'], 422);
+        }
+
+        $document->restore();
+
+        // AUDIT: restore
+        Audit::log($r, 'restore', [
+            'employee_id' => $document->employee_id,
+            'document_id' => $document->id,
+        ]);
+
+        return response()->json($document->load('tags'));
+    }
+
+    /**
+     * Alternative restore if you prefer ID-based lookup (works even if binding doesn't include trashed)
+     */
+    public function restoreById(Request $r, int $id)
+    {
+        $doc = Document::withTrashed()->findOrFail($id);
+
+        $user = $r->user();
         if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$doc->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $doc->restore();
+
+        Audit::log($r, 'restore', [
+            'employee_id' => $doc->employee_id,
+            'document_id' => $doc->id,
+        ]);
+
         return response()->json($doc->load('tags'));
     }
 
@@ -187,7 +290,8 @@ class DocumentController extends Controller
     public function replaceFile(Request $r, Document $document)
     {
         $user = $r->user();
-        $this->ensureEmployeeOwns($r, $document->employee_id);
+        $this->ensureEmployeeOwns($r, (int)$document->employee_id);
+
         if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -198,13 +302,12 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Restore the document before replacing the file.'], 422);
         }
 
-        $disk = 'local';
-        $fs   = Storage::disk($disk);
+        $fs = Storage::disk($this->disk);
 
         $oldPath    = $document->path;
-        $employeeId = $document->employee_id;
+        $employeeId = (int)$document->employee_id;
 
-        $newPath = $r->file('file')->store("documents/{$employeeId}", $disk);
+        $newPath = $r->file('file')->store("documents/{$employeeId}", $this->disk);
         $hash    = hash_file('sha256', $r->file('file')->getRealPath());
 
         $document->update([
@@ -216,6 +319,16 @@ class DocumentController extends Controller
             $fs->delete($oldPath);
         }
 
-        return $document->load('tags');
+        // AUDIT: replace
+        Audit::log($r, 'replace', [
+            'employee_id' => $document->employee_id,
+            'document_id' => $document->id,
+            'meta' => [
+                'old_path' => $oldPath,
+                'new_path' => $newPath,
+            ],
+        ]);
+
+        return response()->json($document->load('tags'));
     }
 }

@@ -1,6 +1,7 @@
 // main.tsx
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
+
 import AppShell from "./components/AppShell";
 import Login from "./pages/Login";
 import Logout from "./pages/Logout";
@@ -13,6 +14,9 @@ import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import ManageUsers from "./pages/ManageUsers";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
+import AuditLogs from "./pages/AuditLogs";
+import ChangePassword from "./pages/ChangePassword";
+
 import { api } from "./lib/api";
 import {
   isAuthed,
@@ -22,7 +26,10 @@ import {
   clearToken,
   type CurrentUser,
 } from "./lib/auth";
+
 import "./theme.css";
+
+/* ================= HASH ROUTER ================= */
 
 function useRoute() {
   const [route, setRoute] = useState(window.location.hash || "#/");
@@ -34,7 +41,8 @@ function useRoute() {
   return route;
 }
 
-/** ✅ ALWAYS check /me on boot if there’s a token */
+/* ================= AUTH BOOTSTRAP ================= */
+
 function useBootstrapAuth(): boolean {
   const [ready, setReady] = useState(false);
 
@@ -47,9 +55,8 @@ function useBootstrapAuth(): boolean {
       }
       try {
         const { data: me } = await api.get("/me");
-        setCurrentUser(me); // refresh cache every load
+        setCurrentUser(me);
       } catch {
-        // token invalid/expired — clear and send to login
         clearToken();
         window.location.hash = "#/login";
       } finally {
@@ -61,6 +68,8 @@ function useBootstrapAuth(): boolean {
   return ready;
 }
 
+/* ================= AUTHED ROUTES ================= */
+
 function AuthedRoutes({
   route,
   me,
@@ -68,7 +77,7 @@ function AuthedRoutes({
   route: string;
   me: CurrentUser | null;
 }) {
-  // employee landing
+  // Employee default landing
   useEffect(() => {
     if (me?.role === "employee" && me.employee_id) {
       if (route === "#/" || route === "" || route === "#/employees") {
@@ -79,8 +88,25 @@ function AuthedRoutes({
 
   if (route === "#/employee/new" || route.startsWith("#/employee/new"))
     return <EmployeeNew />;
+
   if (route.startsWith("#/me")) return <EmployeeDashboard />;
+
   if (/^#\/employee\/\d+$/.test(route)) return <EmployeeDetail />;
+
+  // 🔐 ADMIN / STAFF ONLY
+  if (route.startsWith("#/audit-logs")) {
+    if (me?.role !== "admin" && me?.role !== "staff") {
+      return <Employees />; // fallback or create a 403 page
+    }
+    return <AuditLogs />;
+  }
+  if (me?.must_change_password) {
+    if (!route.startsWith("#/change-password")) {
+      window.location.hash = "#/change-password";
+      return null;
+    }
+  }
+
   if (route.startsWith("#/search")) return <Search />;
   if (route.startsWith("#/documents")) return <Documents />;
   if (route.startsWith("#/reports")) return <Reports />;
@@ -90,23 +116,26 @@ function AuthedRoutes({
   return <Employees />;
 }
 
+/* ================= ROOT ROUTER ================= */
+
 function Router() {
   const route = useRoute();
-  const ready = useBootstrapAuth(); // ⬅ we gate rendering on this
+  const ready = useBootstrapAuth();
 
-  // Public pages (no shell)
+  // Public pages
   if (route.startsWith("#/login")) return <Login />;
   if (route.startsWith("#/logout")) return <Logout />;
+  if (route.startsWith("#/change-password")) return <ChangePassword />;
 
-  if (!ready) return null; // or a small spinner while checking /me
+  if (!ready) return null; // waiting for /me
 
-  // Require a token after the check above
   if (!isAuthed()) {
     window.location.hash = "#/login";
     return null;
   }
 
   const me = getCurrentUser();
+
   return (
     <AppShell>
       <AuthedRoutes route={route} me={me} />

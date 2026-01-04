@@ -56,7 +56,7 @@ const TITLE_OPTIONS = [
   "Medical Certificate (CSC Form 211)",
   "NBI Clearance",
   "School Diplomas and Transcript of Records",
-  "Marriage Contract/Certificate",
+  "Marriage Contract/Certificate (if applicable)",
   "Certificate of Leave Balances (for transferees)",
   "Clearance from Property and Money Accountabilities (for Transferees)",
   "Commendations, Certificate of Achievement, Awards, etc.",
@@ -94,7 +94,9 @@ export default function EmployeeDetail() {
       const empRes = await api.get(`/employees/${id}`);
       setEmployee(empRes.data);
 
-      const docsRes = await api.get(`/employees/${id}/documents`);
+      const docsRes = await api.get(`/employees/${id}/documents`, {
+        params: { with_trashed: 1 },
+      });
       setDocs(docsRes.data?.data ?? docsRes.data);
     } catch (e: any) {
       const msg =
@@ -229,11 +231,28 @@ export default function EmployeeDetail() {
 
   const deleteDoc = async (docId: number) => {
     if (!confirm("Delete this document?")) return;
+
     try {
       await api.delete(`/documents/${docId}`);
+
+      // ✅ keep it in the list and just refresh so it gets deleted_at
       await load();
+
+      window.dispatchEvent(new Event("app:data-changed"));
     } catch (e: any) {
-      alert(e?.response?.data?.message || "Failed to delete document.");
+      alert(
+        e?.response?.data?.message || e?.message || "Failed to delete document."
+      );
+    }
+  };
+
+  const restoreDoc = async (docId: number) => {
+    try {
+      await api.post(`/documents/${docId}/restore`);
+      await load();
+      window.dispatchEvent(new Event("app:data-changed"));
+    } catch (e: any) {
+      alert(e?.response?.data?.message || "Failed to restore document.");
     }
   };
 
@@ -404,12 +423,21 @@ export default function EmployeeDetail() {
                           onChangeFile(d.id, e.target.files?.[0] || undefined)
                         }
                       />
-                      <Button
-                        className="btn btn-danger btn-xs"
-                        onClick={() => deleteDoc(d.id)}
-                      >
-                        Delete
-                      </Button>
+                      {(d as any).deleted_at ? (
+                        <Button
+                          className="btn btn-outline btn-xs"
+                          onClick={() => restoreDoc(d.id)}
+                        >
+                          Restore
+                        </Button>
+                      ) : (
+                        <Button
+                          className="btn btn-danger btn-xs"
+                          onClick={() => deleteDoc(d.id)}
+                        >
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

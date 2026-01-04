@@ -105,7 +105,12 @@ export default function Employees() {
   };
 
   useEffect(() => {
-    load();
+    load(); // ✅ initial load when page opens
+
+    const onDataChanged = () => load();
+    window.addEventListener("app:data-changed", onDataChanged);
+
+    return () => window.removeEventListener("app:data-changed", onDataChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

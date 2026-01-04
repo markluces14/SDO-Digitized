@@ -18,9 +18,11 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
-        'is_active',
         'employee_id',
+        'is_active',
+        'must_change_password',
     ];
+
 
     protected $hidden = [
         'password',
@@ -31,6 +33,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'is_active'         => 'boolean',
         'employee_id'       => 'integer',
+        'must_change_password' => 'boolean',
     ];
 
     protected $appends = ['role_label'];

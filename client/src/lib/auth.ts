@@ -8,6 +8,7 @@ export type CurrentUser = {
   role: "admin" | "staff" | "employee";
   is_active: boolean;
   employee_id?: number | null;
+   must_change_password?: boolean;
 };
 
 export function getToken(): string | null {

@@ -6,7 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-use Laravel\Sanctum\PersonalAccessToken; // ← ADD THIS
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -81,5 +81,19 @@ class AuthController extends Controller
             'is_active'   => (bool) $u->is_active,
             'employee_id' => $u->employee_id,
         ];
+    }
+    public function changeMyPassword(Request $r)
+    {
+        $u = $r->user();
+
+        $r->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $u->password = Hash::make($r->password);
+        $u->must_change_password = false; // ✅ allow normal access after change
+        $u->save();
+
+        return response()->json(['ok' => true]);
     }
 }

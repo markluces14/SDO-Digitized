@@ -15,7 +15,7 @@ function useHash() {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const hash = useHash();
 
-  // Hide chrome on auth pages
+  // Hide layout on auth pages
   const isAuthRoute =
     hash === "#/login" ||
     hash.startsWith("#/login") ||
@@ -23,7 +23,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     hash.startsWith("#/logout");
 
   if (isAuthRoute) {
-    // Render the page as-is (your Login already handles its own layout)
     return <>{children}</>;
   }
 

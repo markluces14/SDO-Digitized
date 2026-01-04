@@ -43,6 +43,40 @@ export default function Sidebar() {
   const isStaff = role === "staff";
   const isEmployee = role === "employee" && !!me?.employee_id;
 
+  // ✅ must-change-password gate
+  const mustChangePassword = !!(me as any)?.must_change_password;
+
+  // ✅ If user must change password, show ONLY change-password + logout
+  if (mustChangePassword) {
+    return (
+      <aside className="sidebar">
+        <div className="logo">SDO eFiles</div>
+
+        <div className="sidebar-section">Account</div>
+        <nav style={{ display: "grid", gap: 6 }}>
+          <a
+            href="#/change-password"
+            className={`nav-link ${
+              hash.startsWith("#/change-password") ? "active" : ""
+            }`}
+          >
+            <span role="img" aria-label="lock">
+              🔒
+            </span>
+            <span>Change Password</span>
+          </a>
+        </nav>
+
+        <div className="sidebar-footer">
+          <a href="#/logout" className="nav-link">
+            … Log Out …
+          </a>
+        </div>
+      </aside>
+    );
+  }
+
+  // ✅ Normal sidebar
   return (
     <aside className="sidebar">
       <div className="logo">SDO eFiles</div>

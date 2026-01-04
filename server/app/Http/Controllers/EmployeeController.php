@@ -8,6 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+
 
 class EmployeeController extends Controller
 {
@@ -86,22 +89,38 @@ class EmployeeController extends Controller
                     $u->is_active = true;
                 }
                 $u->save();
-            } else {
-                $birthDay = Carbon::parse($data['birthdate'])->format('d'); // e.g. "03"
-                $rawPass  = ($data['last_name'] ?? 'Employee') . $birthDay;  // e.g. "Cruz03"
 
-                User::create([
-                    'name'        => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
-                    'email'       => $data['email'],
-                    'password'    => Hash::make($rawPass),
-                    'role'        => 'employee',
-                    'employee_id' => $emp->id,
-                    'is_active'   => true,
-                ]);
+                // ✅ We do NOT email password here because user already exists.
+                // (Avoid accidentally resetting someone’s password.)
+                return $emp;
             }
+
+            // ✅ Generate password: lastname (lowercase) + birthdate (mm/dd/yyyy)
+            $rawPass = Str::random(8);
+
+            $newUser = User::create([
+                'name'        => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
+                'email'       => $data['email'],
+                'password'    => Hash::make($rawPass),
+                'role'        => 'employee',
+                'employee_id' => $emp->id,
+                'is_active'   => true,
+
+                // ✅ force change at first login
+                'must_change_password' => true,
+            ]);
+
+
+            // ✅ Email the password privately
+            Mail::to($newUser->email)->send(new \App\Mail\EmployeeAccountCreatedMail(
+                name: $newUser->name,
+                email: $newUser->email,
+                password: $rawPass
+            ));
 
             return $emp;
         });
+
 
         return response()->json($emp, 201);
     }

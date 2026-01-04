@@ -25,6 +25,7 @@ type Document = {
   title: string;
   issued_at?: string | null;
   expires_at?: string | null;
+  deleted_at?: string | null; // ✅ add this
   tags?: DocTag[];
 };
 
@@ -176,6 +177,16 @@ export default function EmployeeDashboard() {
     }
   };
 
+  const restoreDoc = async (docId: number) => {
+    try {
+      await api.post(`/documents/${docId}/restore`);
+      await load();
+      window.dispatchEvent(new Event("app:data-changed"));
+    } catch (e: any) {
+      alert(e?.response?.data?.message || "Failed to restore document.");
+    }
+  };
+
   /* ---------- render ---------- */
 
   const fullName =
@@ -312,12 +323,21 @@ export default function EmployeeDashboard() {
                         onChangeFile(d.id, e.target.files?.[0] || undefined)
                       }
                     />
-                    <Button
-                      className="btn btn-danger btn-xs"
-                      onClick={() => deleteDoc(d.id)}
-                    >
-                      Delete
-                    </Button>
+                    {(d as any).deleted_at ? (
+                      <Button
+                        className="btn btn-outline btn-xs"
+                        onClick={() => restoreDoc(d.id)}
+                      >
+                        Restore
+                      </Button>
+                    ) : (
+                      <Button
+                        className="btn btn-danger btn-xs"
+                        onClick={() => deleteDoc(d.id)}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </td>
               </tr>

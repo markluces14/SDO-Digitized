@@ -14,23 +14,23 @@ Route::get('/ping', fn() => ['pong' => true]);
 // Auth (public)
 Route::post('/login', [AuthController::class, 'login']);
 
-// If you want view/download available even when logged out, move these two
-// routes up here (outside Sanctum group). Otherwise leave them inside.
 Route::middleware('auth:sanctum')->group(function () {
+
+    Route::post('/me/password', [AuthController::class, 'changeMyPassword']);
+
     // Session
-    Route::get('/me',     [AuthController::class, 'me']);
+    Route::get('/me',      [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // Users
-    Route::get('users',           [\App\Http\Controllers\UserController::class, 'index']);
-    Route::post('users',          [\App\Http\Controllers\UserController::class, 'store']);
-    Route::put('users/{user}',    [\App\Http\Controllers\UserController::class, 'update']);
-    Route::patch('users/{user}/password', [\App\Http\Controllers\UserController::class, 'resetPassword']);
-    Route::patch('users/{user}/toggle',   [\App\Http\Controllers\UserController::class, 'toggleActive']);
-    Route::delete('users/{user}', [\App\Http\Controllers\UserController::class, 'destroy']);
+    // Users (admin/staff should be enforced in controller/policy)
+    Route::get('users',                 [UserController::class, 'index']);
+    Route::post('users',                [UserController::class, 'store']);
+    Route::put('users/{user}',          [UserController::class, 'update']);
+    Route::patch('users/{user}/password', [UserController::class, 'resetPassword']);
+    Route::patch('users/{user}/toggle', [UserController::class, 'toggleActive']);
+    Route::delete('users/{user}',       [UserController::class, 'destroy']);
 
-
-    // Employees (index, show, store, update, destroy)
+    // Employees
     Route::apiResource('employees', EmployeeController::class);
 
     // Lookups
@@ -44,8 +44,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/documents/{document}/download',  [DocumentController::class, 'download']);
     Route::post('/documents/{document}/file',     [DocumentController::class, 'replaceFile']);
     Route::delete('/documents/{document}',        [DocumentController::class, 'destroy']);
-    Route::post('/documents/{document}/restore',  [DocumentController::class, 'restore']);
+
+    // Restore (choose ONE approach)
+    // A) If you use restore(Request $r, Document $document) with route model binding:
+    // NOTE: may not find trashed docs unless you customize binding; safer to use option B.
+    // Route::post('/documents/{document}/restore',  [DocumentController::class, 'restore']);
+
+    // B) Safer: ID-based restore (works even for soft-deleted records)
+    Route::post('/documents/{id}/restore',         [DocumentController::class, 'restoreById']);
 
     // Search + Audit logs
-    Route::get('/search',     [DocumentController::class, 'search']);
+    Route::get('/search',      [DocumentController::class, 'search']);
+    Route::get('/audit-logs',  [AuditLogController::class, 'index']); // admin page
 });

@@ -171,8 +171,15 @@ export default function ManageUsers() {
 
   const remove = async (u: User) => {
     if (!confirm(`Delete ${u.name}?`)) return;
+
     await api.delete(`/users/${u.id}`);
-    await load(page);
+
+    // update this page immediately
+    setItems((prev) => prev.filter((x) => x.id !== u.id));
+    setMeta((m) => ({ ...m, total: Math.max(0, m.total - 1) }));
+
+    // tell other pages to refresh if they show user-related info
+    window.dispatchEvent(new Event("app:data-changed"));
   };
 
   const next = () => page < meta.last_page && load(page + 1);
