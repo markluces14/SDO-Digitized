@@ -1,0 +1,177 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Employee;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class EmployeeController extends Controller
+{
+    /**
+     * List employees (admins/staff only).
+     */
+    public function index(Request $r)
+    {
+        $user = $r->user();
+
+        if ($user->role === 'employee') {
+            $emp = optional($user->employee);
+            abort_if(!$emp, 403, 'No employee profile.');
+            return Employee::where('id', $emp->id)->paginate(1);
+        }
+
+        $q = Employee::query();
+
+        if ($r->filled('q')) {
+            $term = trim($r->q);
+            $like = '%' . $term . '%';
+            $q->where(function ($x) use ($like) {
+                $x->where('employee_no', 'like', $like)
+                    ->orWhere('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhereRaw("CONCAT(first_name,' ',last_name) like ?", [$like])
+                    ->orWhereRaw("CONCAT(last_name, ', ', first_name) like ?", [$like])
+                    ->orWhere('position', 'like', $like)
+                    ->orWhere('department', 'like', $like);
+            });
+        }
+
+        return $q->orderBy('last_name')->orderBy('first_name')->paginate(20);
+    }
+
+    /**
+     * Create new employee (admins/staff only).
+     */
+    public function store(Request $r)
+    {
+        $user = $r->user();
+        if ($user?->role === 'employee') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $r->validate([
+            'employee_no'    => ['required', 'string', 'max:100'],
+            'email'          => ['required', 'email', 'max:255'],
+            'first_name'     => ['required', 'string', 'max:100'],
+            'middle_name'    => ['nullable', 'string', 'max:100'],
+            'last_name'      => ['required', 'string', 'max:100'],
+            'place_of_birth' => ['required', 'string', 'max:255'],
+            'birthdate'      => ['required', 'date'],
+            'gender'         => ['required', 'in:Male,Female'],
+            'position'       => ['required', 'string', 'max:100'],
+            'department'     => ['required', 'string', 'max:255'],
+            'date_hired'     => ['required', 'date'],
+        ]);
+
+        $emp = DB::transaction(function () use ($data) {
+            // 1) Create the employee
+            $emp = Employee::create($data);
+
+            // 2) Link or create the user account
+            $u = User::where('email', $data['email'])->first();
+
+            if ($u) {
+                if (!$u->employee_id) {
+                    $u->employee_id = $emp->id;
+                }
+                // keep admin/staff as-is; otherwise ensure 'employee'
+                if (!in_array(strtolower($u->role), ['admin', 'staff'], true)) {
+                    $u->role = 'employee';
+                }
+                if ($u->is_active === null) {
+                    $u->is_active = true;
+                }
+                $u->save();
+            } else {
+                $birthDay = Carbon::parse($data['birthdate'])->format('d'); // e.g. "03"
+                $rawPass  = ($data['last_name'] ?? 'Employee') . $birthDay;  // e.g. "Cruz03"
+
+                User::create([
+                    'name'        => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
+                    'email'       => $data['email'],
+                    'password'    => Hash::make($rawPass),
+                    'role'        => 'employee',
+                    'employee_id' => $emp->id,
+                    'is_active'   => true,
+                ]);
+            }
+
+            return $emp;
+        });
+
+        return response()->json($emp, 201);
+    }
+
+    /**
+     * Update an employee.
+     */
+    public function update(Request $r, Employee $employee)
+    {
+        $user = $r->user();
+        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$employee->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $r->validate([
+            'employee_no'    => ['sometimes', 'string', 'max:100'],
+            'email'          => ['sometimes', 'email', 'max:255'],
+            'first_name'     => ['sometimes', 'string', 'max:100'],
+            'middle_name'    => ['nullable', 'string', 'max:100'],
+            'last_name'      => ['sometimes', 'string', 'max:100'],
+            'place_of_birth' => ['sometimes', 'string', 'max:255'],
+            'birthdate'      => ['sometimes', 'date'],
+            'gender'         => ['sometimes', 'in:Male,Female'],
+            'position'       => ['sometimes', 'string', 'max:100'],
+            'department'     => ['sometimes', 'string', 'max:255'],
+            'date_hired'     => ['sometimes', 'date'],
+        ]);
+
+        $employee->update($data);
+
+        // keep email in sync with user
+        if (isset($data['email'])) {
+            $linkedUser = User::where('employee_id', $employee->id)->first();
+            if ($linkedUser) {
+                $linkedUser->update(['email' => $data['email']]);
+            }
+        }
+
+        return response()->json($employee->fresh());
+    }
+
+    /**
+     * Show one employee (employees can only see their own).
+     */
+    public function show(Request $r, Employee $employee)
+    {
+        $user = $r->user();
+        if ($user->role === 'employee') {
+            abort_if(optional($user->employee)->id !== $employee->id, 403);
+        }
+
+        return response()->json([
+            'id'            => $employee->id,
+            'employee_no'   => $employee->employee_no,
+            'email'         => $employee->email,
+            'first_name'    => $employee->first_name,
+            'middle_name'   => $employee->middle_name,
+            'last_name'     => $employee->last_name,
+            'place_of_birth' => $employee->place_of_birth,
+            'birthdate'     => optional($employee->birthdate)->toDateString(),
+            'gender'        => $employee->gender,
+            'position'      => $employee->position,
+            'department'    => $employee->department,
+            'date_hired'    => optional($employee->date_hired)->toDateString(),
+            'full_name'     => trim(sprintf(
+                '%s, %s%s',
+                (string) $employee->last_name,
+                (string) $employee->first_name,
+                $employee->middle_name ? ' ' . $employee->middle_name : ''
+            )),
+        ]);
+    }
+}
