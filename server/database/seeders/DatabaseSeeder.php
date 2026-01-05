@@ -10,9 +10,14 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        User::firstOrCreate(
-            ['email' => 'admin@sdo.local'],
-            ['name' => 'Admin', 'password' => Hash::make('password')]
+        User::updateOrCreate(
+            ['email' => 'admin@sdo.local'], // unique key
+            [
+                'name'      => 'Administrator',
+                'password'  => Hash::make('password'), // change later
+                'role'      => 'admin',
+                'is_active' => true,
+            ]
         );
     }
 }

@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('documents:purge --days=30')->daily();
+Schedule::command('docs:notify-expiring --days=30')->dailyAt('08:00');

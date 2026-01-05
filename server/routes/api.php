@@ -7,6 +7,7 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\LookupController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\NotificationController;
 
 Route::get('/health', fn() => ['ok' => true, 'time' => now()]);
 Route::get('/ping', fn() => ['pong' => true]);
@@ -15,6 +16,10 @@ Route::get('/ping', fn() => ['pong' => true]);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
+
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
 
     Route::post('/me/password', [AuthController::class, 'changeMyPassword']);
 
