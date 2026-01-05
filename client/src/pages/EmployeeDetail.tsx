@@ -283,7 +283,7 @@ export default function EmployeeDetail() {
           className="back-pill"
           onClick={() => (window.location.hash = "#/")}
         >
-          <span className="arrow">←</span> Back to Employees
+          <span className="arrow">←</span> Back to Dashboard
         </button>
       </div>
 

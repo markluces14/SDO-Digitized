@@ -96,7 +96,7 @@ export default function Sidebar() {
               active={isActive("#/") || hash === ""}
             />
             <NavLink
-              href="#/audit"
+              href="#/audit-logs"
               icon={
                 <span role="img" aria-label="audit">
                   📝
@@ -109,16 +109,29 @@ export default function Sidebar() {
         )}
 
         {isEmployee && (
-          <NavLink
-            href={`#/employee/${me!.employee_id}`}
-            icon={
-              <span role="img" aria-label="file">
-                📁
-              </span>
-            }
-            label="My File"
-            active={isActive(`#/employee/${me!.employee_id}`)}
-          />
+          <>
+            <NavLink
+              href="#/me"
+              icon={
+                <span role="img" aria-label="dashboard">
+                  🏠
+                </span>
+              }
+              label="Dashboard"
+              active={isActive("#/me")}
+            />
+
+            <NavLink
+              href={`#/employee/${me!.employee_id}`}
+              icon={
+                <span role="img" aria-label="file">
+                  📁
+                </span>
+              }
+              label="My File"
+              active={isActive(`#/employee/${me!.employee_id}`)}
+            />
+          </>
         )}
       </nav>
 
