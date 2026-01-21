@@ -16,6 +16,7 @@ import ManageUsers from "./pages/ManageUsers";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import AuditLogs from "./pages/AuditLogs";
 import ChangePassword from "./pages/ChangePassword";
+import DataPrivacyModal from "./components/DataPrivacyModal";
 
 import { api } from "./lib/api";
 import {
@@ -32,12 +33,14 @@ import "./theme.css";
 /* ================= HASH ROUTER ================= */
 
 function useRoute() {
-  const [route, setRoute] = useState(window.location.hash || "#/");
+  const [route, setRoute] = useState(window.location.hash || "#/login");
+
   useEffect(() => {
-    const onChange = () => setRoute(window.location.hash || "#/");
+    const onChange = () => setRoute(window.location.hash || "#/login");
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
+
   return route;
 }
 
@@ -47,12 +50,24 @@ function useBootstrapAuth(): boolean {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    // ⛔ Do NOT bootstrap auth on login/logout pages
+    const hash = window.location.hash;
+    if (
+      hash.startsWith("#/login") ||
+      hash.startsWith("#/logout") ||
+      hash.startsWith("#/change-password")
+    ) {
+      setReady(true);
+      return;
+    }
+
     (async () => {
       const token = getToken();
       if (!token) {
         setReady(true);
         return;
       }
+
       try {
         const { data: me } = await api.get("/me");
         setCurrentUser(me);
@@ -96,10 +111,12 @@ function AuthedRoutes({
   // 🔐 ADMIN / STAFF ONLY
   if (route.startsWith("#/audit-logs")) {
     if (me?.role !== "admin" && me?.role !== "staff") {
-      return <Employees />; // fallback or create a 403 page
+      return <Employees />;
     }
     return <AuditLogs />;
   }
+
+  // 🔒 Force password change
   if (me?.must_change_password) {
     if (!route.startsWith("#/change-password")) {
       window.location.hash = "#/change-password";
@@ -122,16 +139,16 @@ function Router() {
   const route = useRoute();
   const ready = useBootstrapAuth();
 
-  // Public pages
+  if (!ready) return null;
+
+  // Public routes
   if (route.startsWith("#/login")) return <Login />;
   if (route.startsWith("#/logout")) return <Logout />;
   if (route.startsWith("#/change-password")) return <ChangePassword />;
 
-  if (!ready) return null; // waiting for /me
-
   if (!isAuthed()) {
     window.location.hash = "#/login";
-    return null;
+    return <Login />;
   }
 
   const me = getCurrentUser();

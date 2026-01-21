@@ -10,39 +10,41 @@ use App\Support\Audit;
 
 class DocumentController extends Controller
 {
+    /**
+     * Keep storage consistent everywhere (store/view/download/force delete)
+     */
     private string $disk = 'local';
 
     private function ensureEmployeeOwns(Request $r, int $employeeId): void
     {
         $u = $r->user();
         if ($u && $u->role === 'employee') {
-            abort_if((int)optional($u->employee)->id !== (int)$employeeId, 403);
+            abort_if((int) optional($u->employee)->id !== (int) $employeeId, 403);
         }
     }
 
     /**
-     * Upload a document (employees limited to own).
+     * Upload a document
      */
     public function store(StoreDocumentRequest $r)
     {
         $user = $r->user();
-        $employeeId = (int)$r->input('employee_id');
+        $employeeId = (int) $r->input('employee_id');
 
         $this->ensureEmployeeOwns($r, $employeeId);
 
-        if ($user?->role === 'employee' && (int)$user->employee_id !== $employeeId) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== $employeeId) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $file = $r->file('file');
 
-        // IMPORTANT: store on consistent disk
         $path = $file->store("documents/{$employeeId}", $this->disk);
         $hash = hash_file('sha256', $file->getRealPath());
 
         $doc = Document::create([
             'employee_id' => $employeeId,
-            'title'       => (string)$r->input('title'),
+            'title'       => (string) $r->input('title'),
             'path'        => $path,
             'hash'        => $hash,
             'issued_at'   => $r->input('issued_at') ?: null,
@@ -50,29 +52,29 @@ class DocumentController extends Controller
             'uploaded_by' => Auth::id(),
         ]);
 
-        if ($r->filled('tags')) {
-            $ids = collect($r->input('tags', []))
-                ->map(fn($t) => Tag::firstOrCreate(['name' => trim((string)$t)])->id)
+        // tags[] from frontend becomes "tags" in Laravel
+        $tags = $r->input('tags', []);
+        if (!empty($tags)) {
+            $ids = collect($tags)
+                ->map(fn($t) => Tag::firstOrCreate(['name' => trim((string) $t)])->id)
                 ->all();
             $doc->tags()->sync($ids);
         }
 
-        // AUDIT: upload
-        Audit::log($r, 'upload', [
-            'employee_id' => $employeeId,
-            'document_id' => $doc->id,
-            'meta' => [
-                'title' => $doc->title,
-                'path'  => $doc->path,
-                'hash'  => $doc->hash,
-            ],
-        ]);
+        // ✅ AUDIT (correct signature)
+        Audit::log(
+            $r,
+            'upload',
+            $doc->id,
+            $employeeId,
+            'Uploaded document: ' . $doc->title
+        );
 
         return response()->json($doc->load('tags'), 201);
     }
 
     /**
-     * Documents of an employee (employees limited to their own).
+     * Documents of an employee
      */
     public function byEmployee(Request $r, Employee $employee)
     {
@@ -87,9 +89,8 @@ class DocumentController extends Controller
         return $q->latest()->paginate(20);
     }
 
-
     /**
-     * Search documents (admins/staff unrestricted; employees restricted to own).
+     * Search documents
      */
     public function search(Request $r)
     {
@@ -97,12 +98,10 @@ class DocumentController extends Controller
 
         $q = Document::with(['employee', 'tags']);
 
-        // Restrict employees first
         if ($user?->role === 'employee') {
-            $q->where('employee_id', (int)$user->employee_id);
+            $q->where('employee_id', (int) $user->employee_id);
         }
 
-        // IMPORTANT: group OR conditions so they don't escape the employee restriction
         if ($r->filled('q')) {
             $term = '%' . $r->q . '%';
             $q->where(function ($w) use ($term) {
@@ -115,22 +114,22 @@ class DocumentController extends Controller
         }
 
         if ($r->filled('employee_id')) {
-            if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$r->employee_id) {
+            if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $r->employee_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
-            $q->where('employee_id', (int)$r->employee_id);
+            $q->where('employee_id', (int) $r->employee_id);
         }
 
         return $q->latest()->paginate(20);
     }
 
     /**
-     * Stream file inline (employees limited to their own).
+     * View (inline)
      */
     public function view(Document $document, Request $r)
     {
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -140,25 +139,22 @@ class DocumentController extends Controller
             abort(404, 'File not found.');
         }
 
-        // Friendly filename: "Last, First - Title.ext"
         $emp  = $document->employee()->first();
         $base = $emp ? ($emp->last_name . ', ' . $emp->first_name) : 'employee';
         $ext  = pathinfo($document->path, PATHINFO_EXTENSION);
         $name = trim($base . ' - ' . ($document->title ?: 'file')) . ($ext ? ".{$ext}" : '');
 
-        // AUDIT: view
-        Audit::log($r, 'view', [
-            'employee_id' => $document->employee_id,
-            'document_id' => $document->id,
-            'meta' => [
-                'title' => $document->title,
-                'path'  => $document->path,
-            ],
-        ]);
+        // ✅ AUDIT (correct signature)
+        Audit::log(
+            $r,
+            'view',
+            $document->id,
+            $document->employee_id,
+            'Viewed document: ' . $document->title
+        );
 
         $mime = File::mimeType($fs->path($document->path)) ?? 'application/octet-stream';
 
-        // Use the local filesystem path and Laravel's response()->file to stream inline
         return response()->file(
             $fs->path($document->path),
             [
@@ -169,12 +165,12 @@ class DocumentController extends Controller
     }
 
     /**
-     * Download file (employees limited to their own).
+     * Download
      */
     public function download(Document $document, Request $r)
     {
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -189,61 +185,48 @@ class DocumentController extends Controller
         $ext  = pathinfo($document->path, PATHINFO_EXTENSION);
         $name = trim($base . ' - ' . ($document->title ?: 'file')) . ($ext ? ".{$ext}" : '');
 
-        // AUDIT: download
-        Audit::log($r, 'download', [
-            'employee_id' => $document->employee_id,
-            'document_id' => $document->id,
-            'meta' => [
-                'title' => $document->title,
-                'path'  => $document->path,
-            ],
-        ]);
-
-        // Avoid IDE warnings + works for local disk
-        return response()->download(
-            $fs->path($document->path),
-            $name
+        // ✅ AUDIT (correct signature)
+        Audit::log(
+            $r,
+            'download',
+            $document->id,
+            $document->employee_id,
+            'Downloaded document: ' . $document->title
         );
+
+        return response()->download($fs->path($document->path), $name);
     }
 
     /**
-     * Soft delete (employees limited to their own).
+     * Soft delete
      */
     public function destroy(Request $r, Document $document)
     {
-        // Optional: if you're using SoftDeletes, this is fine:
-        // use Illuminate\Database\Eloquent\SoftDeletes; in Document model.
-
-        // Employees may only delete their own documents
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        // AUDIT: delete
-        Audit::log($r, 'delete', [
-            'employee_id' => $document->employee_id,
-            'document_id' => $document->id,
-            'meta' => [
-                'title' => $document->title,
-                'path'  => $document->path,
-            ],
-        ]);
+        // ✅ AUDIT (correct signature)
+        Audit::log(
+            $r,
+            'delete',
+            $document->id,
+            $document->employee_id,
+            'Soft-deleted document: ' . $document->title
+        );
 
         $document->delete();
         return response()->noContent();
     }
 
     /**
-     * Restore soft-deleted document (admins/staff; employee only own).
+     * Restore soft deleted
      */
     public function restore(Request $r, Document $document)
     {
-        // NOTE: route-model binding with soft deletes needs withTrashed in route binding
-        // If this fails to find trashed docs, use restoreById instead (see below).
-
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -253,46 +236,52 @@ class DocumentController extends Controller
 
         $document->restore();
 
-        // AUDIT: restore
-        Audit::log($r, 'restore', [
-            'employee_id' => $document->employee_id,
-            'document_id' => $document->id,
-        ]);
+        Audit::log(
+            $r,
+            'restore',
+            $document->id,
+            $document->employee_id,
+            'Restored document: ' . $document->title
+        );
 
         return response()->json($document->load('tags'));
     }
-
-    /**
-     * Alternative restore if you prefer ID-based lookup (works even if binding doesn't include trashed)
-     */
     public function restoreById(Request $r, int $id)
     {
         $doc = Document::withTrashed()->findOrFail($id);
 
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$doc->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $doc->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (method_exists($doc, 'trashed') && !$doc->trashed()) {
+            return response()->json(['message' => 'Document is not deleted.'], 422);
         }
 
         $doc->restore();
 
-        Audit::log($r, 'restore', [
-            'employee_id' => $doc->employee_id,
-            'document_id' => $doc->id,
-        ]);
+        Audit::log(
+            $r,
+            'restore',
+            $doc->id,
+            $doc->employee_id,
+            'Restored document: ' . $doc->title
+        );
 
         return response()->json($doc->load('tags'));
     }
 
+
     /**
-     * Replace file content (employees limited to their own).
+     * Replace file
      */
     public function replaceFile(Request $r, Document $document)
     {
         $user = $r->user();
-        $this->ensureEmployeeOwns($r, (int)$document->employee_id);
+        $this->ensureEmployeeOwns($r, (int) $document->employee_id);
 
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$document->employee_id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $document->employee_id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -305,7 +294,7 @@ class DocumentController extends Controller
         $fs = Storage::disk($this->disk);
 
         $oldPath    = $document->path;
-        $employeeId = (int)$document->employee_id;
+        $employeeId = (int) $document->employee_id;
 
         $newPath = $r->file('file')->store("documents/{$employeeId}", $this->disk);
         $hash    = hash_file('sha256', $r->file('file')->getRealPath());
@@ -319,16 +308,46 @@ class DocumentController extends Controller
             $fs->delete($oldPath);
         }
 
-        // AUDIT: replace
-        Audit::log($r, 'replace', [
-            'employee_id' => $document->employee_id,
-            'document_id' => $document->id,
-            'meta' => [
-                'old_path' => $oldPath,
-                'new_path' => $newPath,
-            ],
-        ]);
+        Audit::log(
+            $r,
+            'replace',
+            $document->id,
+            $document->employee_id,
+            'Replaced file for: ' . $document->title
+        );
 
         return response()->json($document->load('tags'));
+    }
+
+    /**
+     * Permanent delete (Trash)
+     */
+    public function forceDestroy(Request $r, int $id)
+    {
+        $doc = Document::withTrashed()->findOrFail($id);
+
+        $user = $r->user();
+        if ($user?->role === 'employee') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $fs = Storage::disk($this->disk);
+
+        // ✅ AUDIT before delete
+        Audit::log(
+            $r,
+            'trash',
+            $doc->id,
+            $doc->employee_id,
+            'Permanently deleted: ' . $doc->title
+        );
+
+        if (!empty($doc->path) && $fs->exists($doc->path)) {
+            $fs->delete($doc->path);
+        }
+
+        $doc->forceDelete();
+
+        return response()->json(['message' => 'Document permanently deleted.']);
     }
 }

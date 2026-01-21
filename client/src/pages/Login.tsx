@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api } from "../lib/api";
+import { useEffect, useState } from "react";
+import { api, webApi } from "../lib/api";
 import { setToken, setCurrentUser } from "../lib/auth";
 
 export default function Login() {
@@ -9,22 +9,56 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Privacy Notice state
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [privacyLoading, setPrivacyLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await webApi.get("/privacy/status");
+        setPrivacyOpen(!data.accepted);
+      } catch {
+        setPrivacyOpen(true);
+      } finally {
+        setPrivacyLoading(false);
+      }
+    })();
+  }, []);
+
+  const acceptPrivacy = async () => {
+    setError(null);
+    setPrivacyOpen(false); // hide immediately
+
+    try {
+      await webApi.get("/privacy/accept");
+    } catch {
+      setPrivacyOpen(true);
+      setError("Unable to record privacy notice acceptance. Please try again.");
+    }
+  };
+
   const submit = async () => {
     setError(null);
+
+    // block login until accepted (optional but usually desired)
+    if (privacyOpen) {
+      setError("Please read and accept the Data Privacy notice to continue.");
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await api.post("/login", { email, password });
       setToken(data.token);
 
-      // fetch current user and cache it
       const { data: me } = await api.get("/me");
       setCurrentUser(me);
 
-      // redirect based on role
       if (me.role === "employee" && me.employee_id) {
-        window.location.hash = "#/me"; // employee goes to EmployeeDashboard
+        window.location.hash = "#/me";
       } else {
-        window.location.hash = "#/"; // admin/staff to normal dashboard
+        window.location.hash = "#/";
       }
     } catch (e: any) {
       setError(e?.response?.data?.message || "Login failed.");
@@ -39,6 +73,36 @@ export default function Login() {
 
   return (
     <div className="auth-wrap">
+      {/* Privacy Notice Modal */}
+      {!privacyLoading && privacyOpen && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h2>Data Privacy Notice</h2>
+            <p>
+              The School Division Office of Roxas is committed to protecting
+              your personal information in accordance with the Data Privacy Act
+              of 2012 (Republic Act No. 10173). This portal collects and
+              processes only the information necessary for official School
+              Division Office transactions, including the recording, storage,
+              retrieval, and management of important administrative and
+              institutional documents. All data are stored securely and are
+              accessed only by authorized personnel. You have the right to
+              access, correct, request the deletion of your personal data, as
+              well as withdraw your consent where applicable. By continuing to
+              use this portal, you acknowledge and agree to the terms of this
+              Data Privacy Notice. For concerns, please contact us at
+              sdo.testproject@gmail.com .
+            </p>
+
+            <div className="modal-actions">
+              <button className="login-btn" onClick={acceptPrivacy}>
+                I AGREE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left poster */}
       <div className="auth-left">
         <div className="auth-poster">
@@ -89,6 +153,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={onKey}
               autoFocus
+              disabled={privacyOpen}
             />
           </div>
 
@@ -101,6 +166,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={onKey}
+              disabled={privacyOpen}
             />
             <button
               type="button"
@@ -108,12 +174,17 @@ export default function Login() {
               onClick={() => setShow((s) => !s)}
               aria-label="Toggle password"
               title={show ? "Hide" : "Show"}
+              disabled={privacyOpen}
             >
               {show ? "🙈" : "👁️"}
             </button>
           </div>
 
-          <button className="login-btn" onClick={submit} disabled={loading}>
+          <button
+            className="login-btn"
+            onClick={submit}
+            disabled={loading || privacyOpen}
+          >
             {loading ? "…" : "LOG IN"}
           </button>
         </div>

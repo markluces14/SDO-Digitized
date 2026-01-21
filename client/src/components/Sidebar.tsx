@@ -43,10 +43,9 @@ export default function Sidebar() {
   const isStaff = role === "staff";
   const isEmployee = role === "employee" && !!me?.employee_id;
 
-  // ✅ must-change-password gate
   const mustChangePassword = !!(me as any)?.must_change_password;
 
-  // ✅ If user must change password, show ONLY change-password + logout
+  // 🔐 Password change lock
   if (mustChangePassword) {
     return (
       <aside className="sidebar">
@@ -54,17 +53,12 @@ export default function Sidebar() {
 
         <div className="sidebar-section">Account</div>
         <nav style={{ display: "grid", gap: 6 }}>
-          <a
+          <NavLink
             href="#/change-password"
-            className={`nav-link ${
-              hash.startsWith("#/change-password") ? "active" : ""
-            }`}
-          >
-            <span role="img" aria-label="lock">
-              🔒
-            </span>
-            <span>Change Password</span>
-          </a>
+            icon={<span>🔒</span>}
+            label="Change Password"
+            active={isActive("#/change-password")}
+          />
         </nav>
 
         <div className="sidebar-footer">
@@ -76,34 +70,27 @@ export default function Sidebar() {
     );
   }
 
-  // ✅ Normal sidebar
   return (
     <aside className="sidebar">
       <div className="logo">SDO eFiles</div>
 
+      {/* ================= PAGES ================= */}
       <div className="sidebar-section">Pages</div>
       <nav style={{ display: "grid", gap: 6 }}>
         {(isAdmin || isStaff) && (
           <>
             <NavLink
               href="#/"
-              icon={
-                <span role="img" aria-label="dashboard">
-                  🏠
-                </span>
-              }
+              icon={<span>🏠</span>}
               label="Dashboard"
-              active={isActive("#/") || hash === ""}
+              active={hash === "#/" || hash === ""}
             />
+
             <NavLink
               href="#/audit-logs"
-              icon={
-                <span role="img" aria-label="audit">
-                  📝
-                </span>
-              }
+              icon={<span>📝</span>}
               label="Audit Logs"
-              active={isActive("#/audit")}
+              active={isActive("#/audit-logs")}
             />
           </>
         )}
@@ -112,22 +99,14 @@ export default function Sidebar() {
           <>
             <NavLink
               href="#/me"
-              icon={
-                <span role="img" aria-label="dashboard">
-                  🏠
-                </span>
-              }
+              icon={<span>🏠</span>}
               label="Dashboard"
               active={isActive("#/me")}
             />
 
             <NavLink
               href={`#/employee/${me!.employee_id}`}
-              icon={
-                <span role="img" aria-label="file">
-                  📁
-                </span>
-              }
+              icon={<span>📁</span>}
               label="My File"
               active={isActive(`#/employee/${me!.employee_id}`)}
             />
@@ -135,24 +114,26 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* Account pages: ADMIN ONLY */}
-      {isAdmin && (
-        <>
-          <div className="sidebar-section">Account Pages</div>
-          <nav style={{ display: "grid", gap: 6 }}>
-            <NavLink
-              href="#/users"
-              icon={
-                <span role="img" aria-label="users">
-                  👤
-                </span>
-              }
-              label="Manage Users"
-              active={isActive("#/users")}
-            />
-          </nav>
-        </>
-      )}
+      {/* ================= ACCOUNT PAGES ================= */}
+      <div className="sidebar-section">Account Pages</div>
+      <nav style={{ display: "grid", gap: 6 }}>
+        {isAdmin && (
+          <NavLink
+            href="#/users"
+            icon={<span>👤</span>}
+            label="Manage Users"
+            active={isActive("#/users")}
+          />
+        )}
+
+        {/* ✅ SETTINGS FOR ALL ROLES */}
+        <NavLink
+          href="#/settings"
+          icon={<span>⚙️</span>}
+          label="Settings"
+          active={isActive("#/settings")}
+        />
+      </nav>
 
       <div className="sidebar-footer">
         <a href="#/logout" className="nav-link">

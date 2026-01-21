@@ -7,10 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-
 
 class EmployeeController extends Controller
 {
@@ -56,32 +54,45 @@ class EmployeeController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $data = $r->validate([
-            'employee_no'    => ['required', 'string', 'max:100'],
-            'email'          => ['required', 'email', 'max:255'],
-            'first_name'     => ['required', 'string', 'max:100'],
-            'middle_name'    => ['nullable', 'string', 'max:100'],
-            'last_name'      => ['required', 'string', 'max:100'],
-            'place_of_birth' => ['required', 'string', 'max:255'],
-            'birthdate'      => ['required', 'date'],
-            'gender'         => ['required', 'in:Male,Female'],
-            'position'       => ['required', 'string', 'max:100'],
-            'department'     => ['required', 'string', 'max:255'],
-            'date_hired'     => ['required', 'date'],
-        ]);
+        $data = $r->validate(
+            [
+                'employee_no'    => ['required', 'string', 'max:100'],
+                'email'          => ['required', 'email', 'max:255'],
+                'first_name'     => ['required', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'middle_name'    => ['nullable', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'last_name'      => ['required', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'place_of_birth' => ['required', 'string', 'max:255'],
+                'birthdate'      => ['required', 'date'],
+                'gender'         => ['required', 'in:Male,Female'],
+                'position'       => ['required', 'string', 'max:100'],
+                'department'     => ['required', 'string', 'max:255'],
+                'date_hired'     => ['required', 'date'],
+            ],
+            [
+                'first_name.regex'  => 'First name may contain letters only (including ñ), spaces, and hyphen.',
+                'middle_name.regex' => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
+                'last_name.regex'   => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
+            ]
+        );
+
+        // Normalize spacing in names
+        foreach (['first_name', 'middle_name', 'last_name'] as $k) {
+            if (isset($data[$k])) {
+                $data[$k] = preg_replace('/\s+/u', ' ', trim($data[$k]));
+            }
+        }
 
         $emp = DB::transaction(function () use ($data) {
-            // 1) Create the employee
+            // 1) Create employee
             $emp = Employee::create($data);
 
-            // 2) Link or create the user account
+            // 2) Link or create user
             $u = User::where('email', $data['email'])->first();
 
             if ($u) {
                 if (!$u->employee_id) {
                     $u->employee_id = $emp->id;
                 }
-                // keep admin/staff as-is; otherwise ensure 'employee'
                 if (!in_array(strtolower($u->role), ['admin', 'staff'], true)) {
                     $u->role = 'employee';
                 }
@@ -90,12 +101,10 @@ class EmployeeController extends Controller
                 }
                 $u->save();
 
-                // ✅ We do NOT email password here because user already exists.
-                // (Avoid accidentally resetting someone’s password.)
                 return $emp;
             }
 
-            // ✅ Generate password: lastname (lowercase) + birthdate (mm/dd/yyyy)
+            // Generate temporary password
             $rawPass = Str::random(8);
 
             $newUser = User::create([
@@ -105,22 +114,19 @@ class EmployeeController extends Controller
                 'role'        => 'employee',
                 'employee_id' => $emp->id,
                 'is_active'   => true,
-
-                // ✅ force change at first login
                 'must_change_password' => true,
             ]);
 
-
-            // ✅ Email the password privately
-            Mail::to($newUser->email)->send(new \App\Mail\EmployeeAccountCreatedMail(
-                name: $newUser->name,
-                email: $newUser->email,
-                password: $rawPass
-            ));
+            Mail::to($newUser->email)->send(
+                new \App\Mail\EmployeeAccountCreatedMail(
+                    name: $newUser->name,
+                    email: $newUser->email,
+                    password: $rawPass
+                )
+            );
 
             return $emp;
         });
-
 
         return response()->json($emp, 201);
     }
@@ -131,27 +137,41 @@ class EmployeeController extends Controller
     public function update(Request $r, Employee $employee)
     {
         $user = $r->user();
-        if ($user?->role === 'employee' && (int)$user->employee_id !== (int)$employee->id) {
+        if ($user?->role === 'employee' && (int) $user->employee_id !== (int) $employee->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $data = $r->validate([
-            'employee_no'    => ['sometimes', 'string', 'max:100'],
-            'email'          => ['sometimes', 'email', 'max:255'],
-            'first_name'     => ['sometimes', 'string', 'max:100'],
-            'middle_name'    => ['nullable', 'string', 'max:100'],
-            'last_name'      => ['sometimes', 'string', 'max:100'],
-            'place_of_birth' => ['sometimes', 'string', 'max:255'],
-            'birthdate'      => ['sometimes', 'date'],
-            'gender'         => ['sometimes', 'in:Male,Female'],
-            'position'       => ['sometimes', 'string', 'max:100'],
-            'department'     => ['sometimes', 'string', 'max:255'],
-            'date_hired'     => ['sometimes', 'date'],
-        ]);
+        $data = $r->validate(
+            [
+                'employee_no'    => ['sometimes', 'string', 'max:100'],
+                'email'          => ['sometimes', 'email', 'max:255'],
+                'first_name'     => ['sometimes', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'middle_name'    => ['nullable', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'last_name'      => ['sometimes', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
+                'place_of_birth' => ['sometimes', 'string', 'max:255'],
+                'birthdate'      => ['sometimes', 'date'],
+                'gender'         => ['sometimes', 'in:Male,Female'],
+                'position'       => ['sometimes', 'string', 'max:100'],
+                'department'     => ['sometimes', 'string', 'max:255'],
+                'date_hired'     => ['sometimes', 'date'],
+            ],
+            [
+                'first_name.regex'  => 'First name may contain letters only (including ñ), spaces, and hyphen.',
+                'middle_name.regex' => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
+                'last_name.regex'   => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
+            ]
+        );
+
+        // Normalize spacing in names
+        foreach (['first_name', 'middle_name', 'last_name'] as $k) {
+            if (isset($data[$k])) {
+                $data[$k] = preg_replace('/\s+/u', ' ', trim($data[$k]));
+            }
+        }
 
         $employee->update($data);
 
-        // keep email in sync with user
+        // Sync email with user
         if (isset($data['email'])) {
             $linkedUser = User::where('employee_id', $employee->id)->first();
             if ($linkedUser) {
@@ -173,19 +193,19 @@ class EmployeeController extends Controller
         }
 
         return response()->json([
-            'id'            => $employee->id,
-            'employee_no'   => $employee->employee_no,
-            'email'         => $employee->email,
-            'first_name'    => $employee->first_name,
-            'middle_name'   => $employee->middle_name,
-            'last_name'     => $employee->last_name,
+            'id'             => $employee->id,
+            'employee_no'    => $employee->employee_no,
+            'email'          => $employee->email,
+            'first_name'     => $employee->first_name,
+            'middle_name'    => $employee->middle_name,
+            'last_name'      => $employee->last_name,
             'place_of_birth' => $employee->place_of_birth,
-            'birthdate'     => optional($employee->birthdate)->toDateString(),
-            'gender'        => $employee->gender,
-            'position'      => $employee->position,
-            'department'    => $employee->department,
-            'date_hired'    => optional($employee->date_hired)->toDateString(),
-            'full_name'     => trim(sprintf(
+            'birthdate'      => optional($employee->birthdate)->toDateString(),
+            'gender'         => $employee->gender,
+            'position'       => $employee->position,
+            'department'     => $employee->department,
+            'date_hired'     => optional($employee->date_hired)->toDateString(),
+            'full_name'      => trim(sprintf(
                 '%s, %s%s',
                 (string) $employee->last_name,
                 (string) $employee->first_name,

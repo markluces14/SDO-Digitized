@@ -1,13 +1,17 @@
 import axios from "axios";
-import { clearToken } from "./auth";
+import { clearToken } from "./auth"; // ✅ named import
 
 export const api = axios.create({
   baseURL: "http://127.0.0.1:8000/api",
+  withCredentials: true,
+});
+export const webApi = axios.create({
+  baseURL: "http://127.0.0.1:8000", // for non-API calls like file downloads
+  withCredentials: true,
 });
 
-// if your token is in localStorage, attach it
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("sdo_token");
+  const token = sessionStorage.getItem("sdo_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });

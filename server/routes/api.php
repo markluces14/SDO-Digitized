@@ -8,6 +8,9 @@ use App\Http\Controllers\LookupController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\AuditReportController;
+use App\Http\Controllers\FeedbackController;
 
 Route::get('/health', fn() => ['ok' => true, 'time' => now()]);
 Route::get('/ping', fn() => ['pong' => true]);
@@ -16,6 +19,19 @@ Route::get('/ping', fn() => ['pong' => true]);
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
+
+
+    Route::get('/feedback', [FeedbackController::class, 'index']);
+    Route::post('/feedback', [FeedbackController::class, 'store']);
+    Route::patch('/feedback/{feedback}/status', [FeedbackController::class, 'updateStatus']);
+
+
+
+
+
+    Route::get('/reports/audit/pdf', [AuditReportController::class, 'pdf']);
+
+    Route::get('/reports/employees/pdf', [ReportController::class, 'employeesPdf']);
 
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::post('/notifications/{notification}/read', [NotificationController::class, 'read']);
@@ -50,13 +66,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/documents/{document}/file',     [DocumentController::class, 'replaceFile']);
     Route::delete('/documents/{document}',        [DocumentController::class, 'destroy']);
 
-    // Restore (choose ONE approach)
-    // A) If you use restore(Request $r, Document $document) with route model binding:
-    // NOTE: may not find trashed docs unless you customize binding; safer to use option B.
-    // Route::post('/documents/{document}/restore',  [DocumentController::class, 'restore']);
-
-    // B) Safer: ID-based restore (works even for soft-deleted records)
     Route::post('/documents/{id}/restore',         [DocumentController::class, 'restoreById']);
+    Route::delete('/documents/{id}/force', [\App\Http\Controllers\DocumentController::class, 'forceDestroy']);
+
 
     // Search + Audit logs
     Route::get('/search',      [DocumentController::class, 'search']);

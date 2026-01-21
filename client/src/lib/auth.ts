@@ -8,18 +8,18 @@ export type CurrentUser = {
   role: "admin" | "staff" | "employee";
   is_active: boolean;
   employee_id?: number | null;
-   must_change_password?: boolean;
+  must_change_password?: boolean;
 };
 
 export function getToken(): string | null {
-  return localStorage.getItem(KEY);
+  return sessionStorage.getItem(KEY);
 }
 export function setToken(t: string) {
-  localStorage.setItem(KEY, t);
+  sessionStorage.setItem(KEY, t);
 }
 export function clearToken() {
-  localStorage.removeItem(KEY);
-  localStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem(KEY);
+  sessionStorage.removeItem(USER_KEY);
 }
 
 export function isAuthed(): boolean {
@@ -27,10 +27,10 @@ export function isAuthed(): boolean {
 }
 
 export function setCurrentUser(u: CurrentUser) {
-  localStorage.setItem(USER_KEY, JSON.stringify(u));
+  sessionStorage.setItem(USER_KEY, JSON.stringify(u));
 }
 export function getCurrentUser(): CurrentUser | null {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = sessionStorage.getItem(USER_KEY);
   try {
     return raw ? (JSON.parse(raw) as CurrentUser) : null;
   } catch {

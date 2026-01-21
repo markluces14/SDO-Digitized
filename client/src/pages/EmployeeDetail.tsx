@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import dayjs from "dayjs";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Employee, Document } from "../types";
 import Input from "../components/ui/Input";
@@ -64,6 +63,205 @@ const TITLE_OPTIONS = [
   "Contract of Service (if applicable)",
 ] as const;
 
+const TITLE_TO_TAG: Record<string, string> = {
+  "Appointment (Form 33)": "Employment",
+  "Assumption to Duty": "Employment",
+  "Oath of Office": "Employment",
+  "Personal Data Sheet (CSC Form 212/Updated as of December 2018)":
+    "Personal Records",
+  "Position Description Form": "Personal Records",
+  "Certificate of Eligibilities/licenses": "Performance & Discipline",
+  "Designation Orders, if applicable": "Performance & Discipline",
+  "Statement of Assets, Liabilities and Networth": "Compensation & Benefits",
+  "Notices of Salary Adjustments/Step Increments": "Compensation & Benefits",
+  "Medical Certificate (CSC Form 211)": "Health & Clearance",
+  "NBI Clearance": "Health & Clearance",
+  "School Diplomas and Transcript of Records": "Qualifications",
+  "Marriage Contract/Certificate (if applicable)": "Personal Records",
+  "Certificate of Leave Balances (for transferees)": "Performance & Discipline",
+  "Clearance from Property and Money Accountabilities (for Transferees)":
+    "Health & Clearance",
+  "Commendations, Certificate of Achievement, Awards, etc.":
+    "Performance & Discipline",
+  "Disciplinary Action Documents (if any)": "Performance & Discipline",
+  "Contract of Service (if applicable)": "Employment",
+};
+const FILTER_TAG_OPTIONS = [
+  "Employment",
+  "Personal Records",
+  "Performance & Discipline",
+  "Compensation & Benefits",
+  "Health & Clearance",
+  "Qualifications",
+] as const;
+
+/* ---------------- modal ---------------- */
+
+function ConfirmModal({
+  open,
+  title = "Confirm",
+  message,
+  confirmText = "Confirm",
+  confirmClassName = "btn btn-danger",
+  cancelText = "Cancel",
+  loading = false,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title?: string;
+  message: string;
+  confirmText?: string;
+  confirmClassName?: string;
+  cancelText?: string;
+  loading?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="ui-modal__backdrop" onClick={onCancel}>
+      <div
+        className="ui-modal__panel"
+        style={{ width: 520, maxWidth: "92vw" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="ui-modal__header">
+          <div className="ui-modal__title">{title}</div>
+          <button
+            className="ui-modal__close"
+            onClick={onCancel}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="ui-modal__body">
+          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{message}</div>
+        </div>
+
+        <div className="ui-modal__footer">
+          <Button
+            className="btn btn-outline"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            {cancelText}
+          </Button>
+
+          <Button
+            className={confirmClassName}
+            onClick={onConfirm}
+            disabled={loading}
+          >
+            {loading ? "Please wait…" : confirmText}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterModal({
+  open,
+  titleValue,
+  tagValue,
+  titleOptions,
+  tagOptions,
+  onClose,
+  onApply,
+  onReset,
+  setTitleValue,
+  setTagValue,
+}: {
+  open: boolean;
+  titleValue: string;
+  tagValue: string;
+  titleOptions: string[];
+  tagOptions: string[];
+  setTitleValue: (v: string) => void;
+  setTagValue: (v: string) => void;
+  onClose: () => void;
+  onApply: () => void;
+  onReset: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="ui-modal__backdrop" onClick={onClose}>
+      <div
+        className="ui-modal__panel"
+        style={{ width: 720, maxWidth: "96vw" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="ui-modal__header">
+          <div className="ui-modal__title">Filter Documents</div>
+          <button
+            className="ui-modal__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="ui-modal__body">
+          <div className="form-grid">
+            <div>
+              <label className="field-label">Title</label>
+              <Select
+                value={titleValue}
+                onChange={(e) => setTitleValue(e.target.value)}
+              >
+                <option value="">All Titles</option>
+                {titleOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div>
+              <label className="field-label">Tag</label>
+              <Select
+                value={tagValue}
+                onChange={(e) => setTagValue(e.target.value)}
+              >
+                <option value="">All Tags</option>
+                {tagOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="full muted" style={{ marginTop: 6 }}>
+              Tip: Use <strong>Search</strong> to find by title/tags text, and{" "}
+              <strong>Filter</strong> to narrow down.
+            </div>
+          </div>
+        </div>
+
+        <div className="ui-modal__footer">
+          <Button className="btn btn-outline" onClick={onReset}>
+            Reset
+          </Button>
+          <Button className="btn btn-outline" onClick={onClose}>
+            Close
+          </Button>
+          <Button className="btn btn-primary" onClick={onApply}>
+            Apply
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- page ---------------- */
 
 export default function EmployeeDetail() {
@@ -76,8 +274,6 @@ export default function EmployeeDetail() {
 
   // upload state
   const [title, setTitle] = useState("");
-  const [issuedAt, setIssuedAt] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
   const [tags, setTags] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -85,6 +281,18 @@ export default function EmployeeDetail() {
 
   // change-file inputs
   const changeInputsRef = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // delete confirm modal
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<"soft" | "trash">("soft");
+  const [confirmDocId, setConfirmDocId] = useState<number | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  // search + filter
+  const [searchText, setSearchText] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterTitle, setFilterTitle] = useState("");
+  const [filterTag, setFilterTag] = useState("");
 
   const load = async () => {
     if (!id) return;
@@ -127,6 +335,25 @@ export default function EmployeeDetail() {
     return `Employee #${id}`;
   })();
 
+  const filteredDocs = useMemo(() => {
+    const s = searchText.trim().toLowerCase();
+
+    return docs.filter((d) => {
+      const dTitle = String(d.title ?? "");
+      const dTags = (d.tags ?? []).map((t: any) => String(t.name));
+      const dTagsLower = dTags.map((x) => x.toLowerCase());
+
+      // filters (dropdown)
+      if (filterTitle && dTitle !== filterTitle) return false;
+      if (filterTag && !dTags.includes(filterTag)) return false;
+
+      // search (free text)
+      if (!s) return true;
+      const hay = `${dTitle} ${dTags.join(" ")}`.toLowerCase();
+      return hay.includes(s);
+    });
+  }, [docs, searchText, filterTitle, filterTag]);
+
   /* ---------------- actions ---------------- */
 
   const upload = async () => {
@@ -139,13 +366,13 @@ export default function EmployeeDetail() {
       const fd = new FormData();
       fd.append("employee_id", String(id));
       fd.append("title", title);
-      if (issuedAt) fd.append("issued_at", issuedAt);
-      if (expiresAt) fd.append("expires_at", expiresAt);
+
       tags
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean)
         .forEach((t) => fd.append("tags[]", t));
+
       fd.append("file", file);
 
       await api.post("/documents", fd, {
@@ -153,8 +380,6 @@ export default function EmployeeDetail() {
       });
 
       setTitle("");
-      setIssuedAt("");
-      setExpiresAt("");
       setTags("");
       setFile(null);
 
@@ -164,7 +389,7 @@ export default function EmployeeDetail() {
         e?.response?.data?.message ||
           e?.response?.data?.error ||
           e?.message ||
-          "Upload failed."
+          "Upload failed.",
       );
     } finally {
       setSaving(false);
@@ -190,13 +415,11 @@ export default function EmployeeDetail() {
         validateStatus: (s) => s >= 200 && s < 400,
       });
 
-      // Prefer filename from server
       const cd =
         res.headers?.["content-disposition"] ||
         res.headers?.["Content-Disposition"];
       let fname = parseFilenameFromDisposition(cd) || "document";
 
-      // Fallback: "Last, First - Title.ext"
       if (employee) {
         const ln =
           (employee as any).last_name ||
@@ -229,21 +452,16 @@ export default function EmployeeDetail() {
     }
   };
 
-  const deleteDoc = async (docId: number) => {
-    if (!confirm("Delete this document?")) return;
+  const deleteDoc = (docId: number) => {
+    setConfirmMode("soft");
+    setConfirmDocId(docId);
+    setConfirmOpen(true);
+  };
 
-    try {
-      await api.delete(`/documents/${docId}`);
-
-      // ✅ keep it in the list and just refresh so it gets deleted_at
-      await load();
-
-      window.dispatchEvent(new Event("app:data-changed"));
-    } catch (e: any) {
-      alert(
-        e?.response?.data?.message || e?.message || "Failed to delete document."
-      );
-    }
+  const trashDoc = (docId: number) => {
+    setConfirmMode("trash");
+    setConfirmDocId(docId);
+    setConfirmOpen(true);
   };
 
   const restoreDoc = async (docId: number) => {
@@ -253,6 +471,34 @@ export default function EmployeeDetail() {
       window.dispatchEvent(new Event("app:data-changed"));
     } catch (e: any) {
       alert(e?.response?.data?.message || "Failed to restore document.");
+    }
+  };
+
+  const runConfirmedDelete = async () => {
+    if (!confirmDocId) return;
+
+    setConfirmLoading(true);
+    try {
+      if (confirmMode === "soft") {
+        await api.delete(`/documents/${confirmDocId}`);
+      } else {
+        await api.delete(`/documents/${confirmDocId}/force`);
+      }
+
+      setConfirmOpen(false);
+      setConfirmDocId(null);
+
+      await load();
+      window.dispatchEvent(new Event("app:data-changed"));
+    } catch (e: any) {
+      alert(
+        e?.response?.data?.message ||
+          (confirmMode === "trash"
+            ? "Failed to permanently delete document."
+            : "Failed to delete document."),
+      );
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -272,6 +518,13 @@ export default function EmployeeDetail() {
     } catch (e: any) {
       alert(e?.response?.data?.message || "Failed to replace file.");
     }
+  };
+
+  const applyFilter = () => setFilterOpen(false);
+
+  const resetFilter = () => {
+    setFilterTitle("");
+    setFilterTag("");
   };
 
   /* ---------------- render ---------------- */
@@ -306,7 +559,14 @@ export default function EmployeeDetail() {
         <div className="form-grid">
           <div>
             <label className="field-label">Title *</label>
-            <Select value={title} onChange={(e) => setTitle(e.target.value)}>
+            <Select
+              value={title}
+              onChange={(e) => {
+                const t = e.target.value;
+                setTitle(t);
+                setTags(TITLE_TO_TAG[t] ?? "");
+              }}
+            >
               <option value="">— Select Title —</option>
               {TITLE_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>
@@ -315,30 +575,16 @@ export default function EmployeeDetail() {
               ))}
             </Select>
           </div>
-          <div>
-            <label className="field-label">Issued at</label>
-            <Input
-              type="date"
-              value={issuedAt}
-              onChange={(e) => setIssuedAt(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="field-label">Expires at</label>
-            <Input
-              type="date"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-            />
-          </div>
+
           <div className="full">
             <label className="field-label">Tags</label>
             <Input
-              placeholder="e.g. TOR, License"
+              placeholder="Auto-generated from title"
               value={tags}
-              onChange={(e) => setTags(e.target.value)}
+              readOnly
             />
           </div>
+
           <div className="full file-row">
             <label className="field-label">File *</label>
             <input
@@ -354,62 +600,154 @@ export default function EmployeeDetail() {
 
       {/* Documents table */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Documents</h3>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginBottom: 10,
+          }}
+        >
+          <h3 style={{ marginTop: 0, marginBottom: 0 }}>Documents</h3>
+
+          {/* Search + Filter controls */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Input
+              className="thin-search"
+              placeholder="Search title or tags…"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+            <Button
+              className="btn btn-outline"
+              onClick={() => setFilterOpen(true)}
+            >
+              Filter
+            </Button>
+            <Button className="btn btn-primary" onClick={() => {}}>
+              Search
+            </Button>
+          </div>
+        </div>
+
         {loadError && (
           <div className="muted" style={{ marginBottom: 8 }}>
             {loadError}
           </div>
         )}
+
+        {/* Active filter chips */}
+        {(filterTitle || filterTag) && (
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            {filterTitle && (
+              <span className="badge">
+                Title: {filterTitle}{" "}
+                <button
+                  type="button"
+                  onClick={() => setFilterTitle("")}
+                  style={{ marginLeft: 6, cursor: "pointer" }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {filterTag && (
+              <span className="badge">
+                Tag: {filterTag}{" "}
+                <button
+                  type="button"
+                  onClick={() => setFilterTag("")}
+                  style={{ marginLeft: 6, cursor: "pointer" }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            <Button className="btn btn-outline btn-xs" onClick={resetFilter}>
+              Clear Filters
+            </Button>
+          </div>
+        )}
+
         <table className="records-table">
           <thead>
             <tr>
               <th>Title</th>
-              <th>Issued</th>
-              <th>Expires</th>
               <th>Tags</th>
               <th style={{ width: 300 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {docs.map((d) => {
-              const issued = d.issued_at
-                ? dayjs(d.issued_at).format("YYYY-MM-DD")
-                : "—";
-              const expires = d.expires_at
-                ? dayjs(d.expires_at).format("YYYY-MM-DD")
-                : "—";
+            {filteredDocs.map((d) => {
               const tagStr = (d.tags ?? []).map((t: any) => t.name).join(", ");
-
               return (
                 <tr key={d.id}>
                   <td>{d.title}</td>
-                  <td className="muted">{issued}</td>
-                  <td className="muted">{expires}</td>
                   <td className="muted">{tagStr || "—"}</td>
                   <td>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span
-                        className="link"
-                        style={{ cursor: "pointer" }}
-                        onClick={() => viewDoc(d.id)}
-                        title="View (opens in new tab)"
-                      >
-                        View
-                      </span>
-                      <span
-                        className="link"
-                        style={{ cursor: "pointer" }}
-                        onClick={() => downloadDoc(d.id)}
-                        title="Download"
-                      >
-                        Download
-                      </span>
-                      <Button
-                        className="btn btn-outline btn-xs"
-                        onClick={() => triggerChangeFile(d.id)}
-                      >
-                        Change File
-                      </Button>
+                    <div className="doc-actions">
+                      <div className="doc-links">
+                        <button
+                          type="button"
+                          className="doc-link"
+                          onClick={() => viewDoc(d.id)}
+                          title="View (opens in new tab)"
+                        >
+                          View
+                        </button>
+
+                        <button
+                          type="button"
+                          className="doc-link"
+                          onClick={() => downloadDoc(d.id)}
+                          title="Download"
+                        >
+                          Download
+                        </button>
+                      </div>
+
+                      <div className="doc-buttons">
+                        <Button
+                          className="btn btn-outline btn-xs"
+                          onClick={() => triggerChangeFile(d.id)}
+                        >
+                          Change File
+                        </Button>
+
+                        {(d as any).deleted_at ? (
+                          <>
+                            <Button
+                              className="btn btn-outline btn-xs"
+                              onClick={() => restoreDoc(d.id)}
+                            >
+                              Restore
+                            </Button>
+                            <Button
+                              className="btn btn-danger btn-xs"
+                              onClick={() => trashDoc(d.id)}
+                            >
+                              Trash
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            className="btn btn-danger btn-xs"
+                            onClick={() => deleteDoc(d.id)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+
                       <input
                         ref={(el) => {
                           changeInputsRef.current = {
@@ -423,37 +761,56 @@ export default function EmployeeDetail() {
                           onChangeFile(d.id, e.target.files?.[0] || undefined)
                         }
                       />
-                      {(d as any).deleted_at ? (
-                        <Button
-                          className="btn btn-outline btn-xs"
-                          onClick={() => restoreDoc(d.id)}
-                        >
-                          Restore
-                        </Button>
-                      ) : (
-                        <Button
-                          className="btn btn-danger btn-xs"
-                          onClick={() => deleteDoc(d.id)}
-                        >
-                          Delete
-                        </Button>
-                      )}
                     </div>
                   </td>
                 </tr>
               );
             })}
 
-            {docs.length === 0 && (
+            {filteredDocs.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
-                  No documents yet.
+                <td colSpan={3} className="muted">
+                  No documents found.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Filter modal */}
+      <FilterModal
+        open={filterOpen}
+        titleValue={filterTitle}
+        tagValue={filterTag}
+        titleOptions={Array.from(TITLE_OPTIONS)}
+        tagOptions={Array.from(FILTER_TAG_OPTIONS)} // ✅ fixed list
+        setTitleValue={setFilterTitle}
+        setTagValue={setFilterTag}
+        onClose={() => setFilterOpen(false)}
+        onApply={applyFilter}
+        onReset={resetFilter}
+      />
+
+      {/* Delete confirmation modal */}
+      <ConfirmModal
+        open={confirmOpen}
+        title={confirmMode === "trash" ? "Permanent Delete" : "Delete Document"}
+        message={
+          confirmMode === "trash"
+            ? "Are you sure you want to permanently delete this file? This cannot be undone."
+            : "Are you sure you want to delete this file?"
+        }
+        confirmText={confirmMode === "trash" ? "Trash" : "Delete"}
+        confirmClassName="btn btn-danger"
+        loading={confirmLoading}
+        onCancel={() => {
+          if (confirmLoading) return;
+          setConfirmOpen(false);
+          setConfirmDocId(null);
+        }}
+        onConfirm={runConfirmedDelete}
+      />
     </div>
   );
 }

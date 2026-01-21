@@ -56,59 +56,18 @@ export const PUBLIC_SECONDARY_INTEGRATED = [
   "Tanque National High School",
 ] as const;
 
-export const PRIVATE_BASIC_ED = [
-  "Capiz Commercial School",
-  "Capiz Adventist Academy, Inc. (formerly Capiz Learning Center)",
-  "Child’s Academy",
-  "Christ’s Baptist School of Roxas City, Inc.",
-  "Colegio de la Purisima Concepcion (Main)",
-  "Colegio de la Purisima Concepcion (Calipayan)",
-  "College of St. John – Roxas",
-  "Filamer Christian University (Basic Education)",
-  "Gai’z Way Learning Center",
-  "Happyville Academy",
-  "Hercor College, Inc. (JHS/SHS)",
-  "Horizon Learning Center",
-  "IPREP School and Tutorial Center",
-  "Keziah Dream Learning Center",
-  "Lifeline International Academy",
-  "Little Miracles Child Development Center",
-  "Maranatha Christian Academy of Roxas City Capiz, Inc.",
-  "Mindhaven School, Inc.",
-  "Northville Christian Academy",
-  "Our Lady of Grace Academy",
-  "Our Mother of Mercy Learning School, Inc.",
-  "Quiver School (Roxas City)",
-  "Roxas International Pre-School, Inc.",
-  "St. Mary’s Academy of Capiz",
-  "St. Michael Montessori, Inc.",
-  "St. Pius X Seminary, Inc.",
-  "Stages Child Learning & Computer School",
-  "Young Minds Preparatory School for Boys and Girls",
-  "Future’s Key Learning Center",
-] as const;
 
-export const HEIS = [
-  "Capiz State University (Roxas City Main Campus)",
-  "Colegio de la Purisima Concepcion",
-  "Filamer Christian University",
-  "Hercor College, Inc.",
-  "St. Anthony College of Roxas City, Inc.",
-  "College of St. John – Roxas",
-] as const;
+
 
 /** Grouped for rendering with <optgroup> */
 export const SCHOOL_GROUPED: Record<string, readonly string[]> = {
   "Public Elementary (incl. Kinder/Primary)": PUBLIC_ELEM,
   "Public JHS/SHS/Integrated": PUBLIC_SECONDARY_INTEGRATED,
-  "Private Basic Education": PRIVATE_BASIC_ED,
-  "Colleges & Universities (HEIs)": HEIS,
+
 };
 
 /** Flat convenience list (if you don’t want optgroups) */
 export const SCHOOL_OPTIONS = [
   ...PUBLIC_ELEM,
   ...PUBLIC_SECONDARY_INTEGRATED,
-  ...PRIVATE_BASIC_ED,
-  ...HEIS,
 ] as const;

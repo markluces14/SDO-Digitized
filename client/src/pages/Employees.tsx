@@ -45,15 +45,67 @@ function OverlayModal({
 
 /* ---------- Helpers ---------- */
 const POSITION_OPTIONS = [
-  "Teacher",
-  "Principal",
-  "Professor I",
-  "Professor II",
-  "Professor III",
-  "Professor IV",
+  "Schools Division Superintendent",
+  "Assistant Schools Division Superintendent",
+  "Chief Education Supervisor",
+  "Public Schools District Supervisor",
+  "Education Program Supervisor",
+  "Senior Education Program Specialist II",
+  "Education Program Specialist",
+  "Project Development Officer II",
+  "Project Development Officer I",
+  "Administrative Officer V",
+  "Administrative Officer IV",
+  "Administrative Officer II",
+  "Administrative Officer I",
+  "Administrative Assistant III",
+  "Administrative Assistant II",
+  "Administrative Assistant I",
+  "Administrative Aide VI",
+  "Administrative Aide IV",
+  "Administrative Aide III",
+  "Administrative Aide I",
+  "Job Order",
+  "Contract of Service",
+  "Engineer III",
+  "Accountant III",
+  "Accountant I",
+  "Legal Officer III",
+  "Legal Assistant",
+  "Medical Officer III",
+  "Dentist",
+  "Nurse II",
+  "Dental Aide IV",
+  "School Principal V",
+  "School Principal IV",
+  "School Principal III",
+  "School Principal II",
+  "School Principal I",
+  "Head Teacher V",
+  "Head Teacher IV",
+  "Head Teacher III",
+  "Head Teacher II",
+  "Head Teacher I",
+  "Master Teacher III",
+  "Master Teacher II",
+  "Master Teacher I",
+  "Teacher VI",
+  "Teacher V",
+  "Teacher IV",
+  "Teacher III",
+  "Teacher II",
+  "Teacher I",
+  "Substitute Teacher",
+  "Librarian III",
+  "Librarian II",
+  "Guidance Counselor",
+  "Registrar I",
 ] as const;
 
 const GENDER_OPTIONS = ["Male", "Female"] as const;
+
+// For report filters
+const YEARS_OPTIONS = Array.from({ length: 41 }, (_, i) => i); // 0..40
 
 type NewEmployeeForm = {
   employee_no: string;
@@ -83,21 +135,61 @@ const emptyForm: NewEmployeeForm = {
   department: "",
 };
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Letters-only name sanitizer (Unicode safe)
+ * - allows all letters (A–Z, a–z, ñ, Ñ, á, é, í, ó, ú, etc.)
+ * - allows spaces (e.g., "De la Cruz")
+ * - allows hyphen (e.g., "Anne-Marie")
+ * - removes numbers and other special characters
+ * - collapses multiple spaces into one
+ */
+function lettersOnlyName(value: string) {
+  const cleaned = value.replace(/[^\p{L}\s-]+/gu, "");
+  return cleaned.replace(/\s+/g, " ").trim();
+}
+
 export default function Employees() {
   const [items, setItems] = useState<Employee[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // modal + form state
+  // create modal + form state
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<NewEmployeeForm>({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // report modal + filters
+  const [reportOpen, setReportOpen] = useState(false);
+  const [filterDept, setFilterDept] = useState<string>("");
+  const [filterPos, setFilterPos] = useState<string>("");
+  const [yearsMin, setYearsMin] = useState<string>("");
+  const [yearsMax, setYearsMax] = useState<string>("");
+  const [downloading, setDownloading] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get("/employees", { params: { q } });
+      const { data } = await api.get("/employees", {
+        params: {
+          q,
+          department: filterDept || undefined,
+          position: filterPos || undefined,
+          years_min: yearsMin ? Number(yearsMin) : undefined,
+          years_max: yearsMax ? Number(yearsMax) : undefined,
+        },
+      });
       setItems((data?.data ?? data) as Employee[]);
     } finally {
       setLoading(false);
@@ -105,18 +197,17 @@ export default function Employees() {
   };
 
   useEffect(() => {
-    load(); // ✅ initial load when page opens
+    load(); // initial load
 
     const onDataChanged = () => load();
     window.addEventListener("app:data-changed", onDataChanged);
-
     return () => window.removeEventListener("app:data-changed", onDataChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const update = <K extends keyof NewEmployeeForm>(
     key: K,
-    value: NewEmployeeForm[K]
+    value: NewEmployeeForm[K],
   ) => setForm((f) => ({ ...f, [key]: value }));
 
   const resetForm = () => {
@@ -149,14 +240,19 @@ export default function Employees() {
     try {
       const payload = { ...form };
       const { data } = await api.post("/employees", payload);
+
       setOpen(false);
       resetForm();
+
       const id = Number(data?.id);
       if (id) {
         window.location.hash = `#/employee/${id}`;
       } else {
         load();
       }
+
+      // optional: if you want list page to refresh elsewhere
+      window.dispatchEvent(new Event("app:data-changed"));
     } catch (e: any) {
       const msg =
         e?.response?.data?.message ||
@@ -166,6 +262,39 @@ export default function Employees() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const downloadReportPdf = async () => {
+    setDownloading(true);
+    try {
+      const res = await api.get("/reports/employees/pdf", {
+        params: {
+          q: q || undefined,
+          department: filterDept || undefined,
+          position: filterPos || undefined,
+          years_min: yearsMin ? Number(yearsMin) : undefined,
+          years_max: yearsMax ? Number(yearsMax) : undefined,
+        },
+        responseType: "blob",
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+
+      downloadBlob(
+        res.data,
+        `employees-report-${dayjs().format("YYYYMMDD-HHmm")}.pdf`,
+      );
+    } catch (e: any) {
+      alert(e?.response?.data?.message || "Failed to download PDF report.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const resetReportFilters = () => {
+    setFilterDept("");
+    setFilterPos("");
+    setYearsMin("");
+    setYearsMax("");
   };
 
   return (
@@ -200,8 +329,10 @@ export default function Employees() {
       <div className="records-card">
         <div className="card-head">
           <div className="card-title">RECORDS LIST</div>
-          <div className="card-search">
+
+          <div className="card-search" style={{ gap: 8, flexWrap: "wrap" }}>
             <div className="gear" />
+
             <Input
               className="thin-search"
               placeholder="Search by name / position / school…"
@@ -209,8 +340,16 @@ export default function Employees() {
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && load()}
             />
+
             <Button className="go-btn" onClick={load}>
               {loading ? "…" : "Go"}
+            </Button>
+
+            <Button
+              className="btn btn-outline"
+              onClick={() => setReportOpen(true)}
+            >
+              Generate Reports
             </Button>
           </div>
         </div>
@@ -271,7 +410,109 @@ export default function Employees() {
         </table>
       </div>
 
-      {/* Create modal */}
+      {/* ===================== REPORT MODAL ===================== */}
+      <OverlayModal
+        open={reportOpen}
+        title="Generate Employee Report"
+        onClose={() => setReportOpen(false)}
+      >
+        <div className="form-grid">
+          <div className="full">
+            <label className="field-label">School/Office</label>
+            <Select
+              className="pill-input"
+              value={filterDept}
+              onChange={(e) => setFilterDept(e.target.value)}
+            >
+              <option value="">All Schools/Offices</option>
+              {Object.entries(SCHOOL_GROUPED).map(([label, list]) => (
+                <optgroup key={label} label={label}>
+                  {list.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="field-label">Position</label>
+            <Select
+              className="pill-input"
+              value={filterPos}
+              onChange={(e) => setFilterPos(e.target.value)}
+            >
+              <option value="">All Positions</option>
+              {POSITION_OPTIONS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="field-label">Years Employed (Min)</label>
+            <Select
+              className="pill-input"
+              value={yearsMin}
+              onChange={(e) => setYearsMin(e.target.value)}
+            >
+              <option value="">No Min</option>
+              {YEARS_OPTIONS.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="field-label">Years Employed (Max)</label>
+            <Select
+              className="pill-input"
+              value={yearsMax}
+              onChange={(e) => setYearsMax(e.target.value)}
+            >
+              <option value="">No Max</option>
+              {YEARS_OPTIONS.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="full muted" style={{ marginTop: 6 }}>
+            Uses your current search text too: <strong>{q || "—"}</strong>
+          </div>
+        </div>
+
+        <div className="ui-modal__footer">
+          <Button className="btn btn-outline" onClick={resetReportFilters}>
+            Reset
+          </Button>
+
+          <Button
+            className="btn btn-outline"
+            onClick={() => setReportOpen(false)}
+          >
+            Close
+          </Button>
+
+          <Button
+            className="btn btn-primary"
+            onClick={downloadReportPdf}
+            disabled={downloading}
+          >
+            {downloading ? "Generating…" : "Download PDF"}
+          </Button>
+        </div>
+      </OverlayModal>
+
+      {/* ===================== CREATE MODAL ===================== */}
       <OverlayModal
         open={open}
         title="Create New Record"
@@ -309,6 +550,7 @@ export default function Employees() {
               placeholder=""
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="f_email">
               Email *
@@ -332,9 +574,12 @@ export default function Employees() {
               id="f_first"
               className="pill-input"
               value={form.first_name}
-              onChange={(e) => update("first_name", e.target.value)}
+              onChange={(e) =>
+                update("first_name", lettersOnlyName(e.target.value))
+              }
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="f_middle">
               Middle Name (optional)
@@ -343,7 +588,9 @@ export default function Employees() {
               id="f_middle"
               className="pill-input"
               value={form.middle_name}
-              onChange={(e) => update("middle_name", e.target.value)}
+              onChange={(e) =>
+                update("middle_name", lettersOnlyName(e.target.value))
+              }
             />
           </div>
 
@@ -356,9 +603,12 @@ export default function Employees() {
               id="f_last"
               className="pill-input"
               value={form.last_name}
-              onChange={(e) => update("last_name", e.target.value)}
+              onChange={(e) =>
+                update("last_name", lettersOnlyName(e.target.value))
+              }
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="f_pob">
               Place of Birth *
@@ -384,6 +634,7 @@ export default function Employees() {
               onChange={(e) => update("birthdate", e.target.value)}
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="f_hired">
               Employment Date *
@@ -416,6 +667,7 @@ export default function Employees() {
               ))}
             </Select>
           </div>
+
           <div>
             <label className="field-label" htmlFor="f_position">
               Position *

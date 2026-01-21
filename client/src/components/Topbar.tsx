@@ -25,6 +25,25 @@ export default function Topbar() {
   const me = getCurrentUser();
   const label = roleLabel(me);
 
+  // ✅ theme
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("theme");
+    const isDark = saved === "dark";
+    setDarkMode(isDark);
+    document.body.classList.toggle("theme-dark", isDark);
+  }, []);
+
+  const toggleTheme = () => {
+    setDarkMode((v) => {
+      const next = !v;
+      document.body.classList.toggle("theme-dark", next);
+      localStorage.setItem("theme", next ? "dark" : "light");
+      return next;
+    });
+  };
+
   // ✅ notifications state
   const [notifOpen, setNotifOpen] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -42,10 +61,9 @@ export default function Topbar() {
   };
 
   useEffect(() => {
-    // only fetch if logged in
     if (!me) return;
     loadNotifs();
-    const t = setInterval(loadNotifs, 60_000); // every 1 minute
+    const t = setInterval(loadNotifs, 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id]);
@@ -76,7 +94,6 @@ export default function Topbar() {
   };
 
   const goToMyFile = () => {
-    // ✅ employee dashboard route in your app
     window.location.hash = "#/me";
     setNotifOpen(false);
   };
@@ -114,8 +131,8 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* Right side: 🔔 + Role chip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* Right side: 🔔 + 🌙 + Role chip */}
+      <div className="topbar-actions">
         {/* ✅ Notification bell */}
         {me && (
           <div ref={boxRef} style={{ position: "relative" }}>
@@ -123,65 +140,19 @@ export default function Topbar() {
               type="button"
               onClick={() => {
                 setNotifOpen((v) => !v);
-                // refresh when opening
                 if (!notifOpen) loadNotifs();
               }}
               title="Notifications"
-              className="btn btn-outline"
-              style={{
-                position: "relative",
-                borderRadius: 999,
-                padding: "8px 10px",
-                lineHeight: 1,
-              }}
+              className="icon-btn"
+              style={{ position: "relative" }}
             >
               🔔
-              {unread > 0 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: -6,
-                    right: -6,
-                    minWidth: 18,
-                    height: 18,
-                    borderRadius: 999,
-                    background: "#e11d48",
-                    color: "#fff",
-                    fontSize: 12,
-                    display: "grid",
-                    placeItems: "center",
-                    padding: "0 6px",
-                  }}
-                >
-                  {unread}
-                </span>
-              )}
+              {unread > 0 && <span className="notif-badge">{unread}</span>}
             </button>
 
             {notifOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "calc(100% + 10px)",
-                  width: 360,
-                  background: "#fff",
-                  border: "1px solid #e9eff7",
-                  borderRadius: 12,
-                  boxShadow: "0 12px 30px rgba(0,0,0,.12)",
-                  overflow: "hidden",
-                  zIndex: 50,
-                }}
-              >
-                <div
-                  style={{
-                    padding: 10,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderBottom: "1px solid #e9eff7",
-                  }}
-                >
+              <div className="notif-dropdown">
+                <div className="notif-head">
                   <strong>Notifications</strong>
                   <button
                     type="button"
@@ -192,7 +163,7 @@ export default function Topbar() {
                   </button>
                 </div>
 
-                <div style={{ maxHeight: 360, overflow: "auto" }}>
+                <div className="notif-body">
                   {items.length === 0 ? (
                     <div className="muted" style={{ padding: 12 }}>
                       No notifications.
@@ -205,32 +176,11 @@ export default function Topbar() {
                           if (!n.read_at) markRead(n.id);
                           goToMyFile();
                         }}
-                        style={{
-                          padding: 12,
-                          cursor: "pointer",
-                          borderBottom: "1px solid #e5e7eb",
-                          background: n.read_at ? "#ffffff" : "#f0f7ff",
-                        }}
+                        className={`notif-item ${n.read_at ? "" : "unread"}`}
                       >
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            color: "#0f172a", // dark slate
-                          }}
-                        >
-                          {n.title}
-                        </div>
-
+                        <div className="notif-title">{n.title}</div>
                         {n.message && (
-                          <div
-                            style={{
-                              marginTop: 4,
-                              fontSize: 13,
-                              color: "#334155", // readable gray
-                            }}
-                          >
-                            {n.message}
-                          </div>
+                          <div className="notif-msg">{n.message}</div>
                         )}
                       </div>
                     ))
@@ -240,6 +190,17 @@ export default function Topbar() {
             )}
           </div>
         )}
+
+        {/* ✅ Dark mode toggle button (right beside bell) */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="icon-btn"
+          title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          aria-label="Toggle dark mode"
+        >
+          {darkMode ? "☀️" : "🌙"}
+        </button>
 
         {/* Role chip */}
         <div
