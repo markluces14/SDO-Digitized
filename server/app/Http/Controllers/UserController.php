@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
@@ -53,13 +56,12 @@ class UserController extends Controller
             'role'     => ['required', Rule::in($this->validRoles())],
         ]);
 
-        // UserController@store
+        $data['role'] = strtolower($data['role']);
         $data['password'] = Hash::make($data['password']);
         $data['must_change_password'] = true;
         $data['password_changed_at'] = null;
 
         $user = User::create($data);
-
 
         return response()->json($user, 201);
     }
@@ -88,10 +90,14 @@ class UserController extends Controller
         $this->assertAdmin($r);
 
         $data = $r->validate([
-            'password' => ['required', 'string', 'min:6', 'confirmed'], // expects password_confirmation
+            'password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
-        $user->update(['password' => Hash::make($data['password'])]);
+        $user->update([
+            'password' => Hash::make($data['password']),
+            'must_change_password' => true,
+            'password_changed_at' => null,
+        ]);
 
         return response()->json(['ok' => true]);
     }
@@ -109,7 +115,34 @@ class UserController extends Controller
     {
         $this->assertAdmin($r);
 
-        $user->delete();
+        DB::transaction(function () use ($user) {
+            $employee = null;
+
+            if (!empty($user->employee_id)) {
+                $employee = Employee::with(['documents.tags'])->find($user->employee_id);
+            }
+
+            if (!$employee && !empty($user->email)) {
+                $employee = Employee::with(['documents.tags'])
+                    ->where('email', $user->email)
+                    ->first();
+            }
+
+            if ($employee) {
+                foreach ($employee->documents as $doc) {
+                    if (!empty($doc->path) && Storage::exists($doc->path)) {
+                        Storage::delete($doc->path);
+                    }
+
+                    $doc->tags()->detach();
+                    $doc->forceDelete();
+                }
+
+                $employee->delete();
+            }
+
+            $user->delete();
+        });
 
         return response()->noContent();
     }

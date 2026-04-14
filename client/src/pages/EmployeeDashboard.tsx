@@ -24,28 +24,6 @@ type Document = {
   deleted_at?: string | null;
 };
 
-/* ---------- required documents list ---------- */
-const REQUIRED_TITLES = [
-  "Appointment (Form 33)",
-  "Assumption to Duty",
-  "Oath of Office",
-  "Personal Data Sheet (CSC Form 212/Updated as of December 2018)",
-  "Position Description Form",
-  "Certificate of Eligibilities/licenses",
-  "Designation Orders, if applicable",
-  "Statement of Assets, Liabilities and Networth",
-  "Notices of Salary Adjustments/Step Increments",
-  "Medical Certificate (CSC Form 211)",
-  "NBI Clearance",
-  "School Diplomas and Transcript of Records",
-  "Marriage Contract/Certificate (if applicable)",
-  "Certificate of Leave Balances (for transferees)",
-  "Clearance from Property and Money Accountabilities (for Transferees)",
-  "Commendations, Certificate of Achievement, Awards, etc.",
-  "Disciplinary Action Documents (if any)",
-  "Contract of Service (if applicable)",
-] as const;
-
 /* ============================================================= */
 
 export default function EmployeeDashboard() {
@@ -53,7 +31,7 @@ export default function EmployeeDashboard() {
   const myEmpId = me?.employee_id || null;
 
   const [emp, setEmp] = useState<Employee | null>(null);
-  const [docs, setDocs] = useState<Document[]>([]); // ONLY for missing-doc computation
+  const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -65,7 +43,6 @@ export default function EmployeeDashboard() {
       const empRes = await api.get(`/employees/${myEmpId}`);
       setEmp(empRes.data);
 
-      // fetch docs ONLY to compute missing items (no table shown)
       const docsRes = await api.get(`/employees/${myEmpId}/documents`);
       setDocs(docsRes.data?.data ?? docsRes.data);
     } catch (e: any) {
@@ -87,21 +64,7 @@ export default function EmployeeDashboard() {
       .filter(Boolean)
       .join(", ");
 
-  // Existing titles (ignore soft-deleted)
-  const existingTitles = new Set(
-    docs
-      .filter((d) => !(d as any).deleted_at)
-      .map((d) => (d.title || "").trim().toLowerCase())
-  );
-
-  const missingDocs = REQUIRED_TITLES.filter(
-    (t) => !existingTitles.has(t.trim().toLowerCase())
-  );
-
-  const completionPct = Math.round(
-    ((REQUIRED_TITLES.length - missingDocs.length) / REQUIRED_TITLES.length) *
-      100
-  );
+  const uploadedDocs = docs.filter((d) => !d.deleted_at);
 
   const goToMyFile = () => {
     if (!myEmpId) return;
@@ -171,7 +134,7 @@ export default function EmployeeDashboard() {
         )}
       </div>
 
-      {/* Missing Documents card */}
+      {/* Uploaded Files card */}
       <div className="card">
         <div
           style={{
@@ -182,9 +145,8 @@ export default function EmployeeDashboard() {
             flexWrap: "wrap",
           }}
         >
-          <h3 style={{ marginTop: 0, marginBottom: 0 }}>Missing Documents</h3>
+          <h3 style={{ marginTop: 0, marginBottom: 0 }}>Uploaded Files</h3>
 
-          {/* Quick action */}
           <button className="btn btn-outline" onClick={goToMyFile}>
             Go to My File
           </button>
@@ -194,21 +156,12 @@ export default function EmployeeDashboard() {
 
         {loading ? (
           <div className="muted">Loading…</div>
-        ) : missingDocs.length === 0 ? (
-          <div className="muted">✅ Complete — no missing documents.</div>
+        ) : uploadedDocs.length === 0 ? (
+          <div className="muted">No uploaded files yet.</div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <div className="muted">
-              Completed:{" "}
-              <strong>
-                {REQUIRED_TITLES.length - missingDocs.length}/
-                {REQUIRED_TITLES.length}
-              </strong>{" "}
-              ({completionPct}%)
-              <div style={{ marginTop: 6 }}>
-                Click any missing item to open <strong>My File</strong> and
-                upload it.
-              </div>
+              Uploaded: <strong>{uploadedDocs.length}</strong>
             </div>
 
             <div
@@ -218,23 +171,19 @@ export default function EmployeeDashboard() {
                 gap: 10,
               }}
             >
-              {missingDocs.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={goToMyFile}
+              {uploadedDocs.map((doc) => (
+                <div
+                  key={doc.id}
                   style={{
                     textAlign: "left",
                     padding: "10px 12px",
                     border: "1px solid #e9eff7",
                     borderRadius: 12,
                     background: "#fff",
-                    cursor: "pointer",
                   }}
-                  title="Open My File to upload this document"
                 >
-                  {t}
-                </button>
+                  {doc.title}
+                </div>
               ))}
             </div>
           </div>

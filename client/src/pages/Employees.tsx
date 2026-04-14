@@ -103,9 +103,7 @@ const POSITION_OPTIONS = [
 ] as const;
 
 const GENDER_OPTIONS = ["Male", "Female"] as const;
-
-// For report filters
-const YEARS_OPTIONS = Array.from({ length: 41 }, (_, i) => i); // 0..40
+const YEARS_OPTIONS = Array.from({ length: 41 }, (_, i) => i);
 
 type NewEmployeeForm = {
   employee_no: string;
@@ -114,11 +112,19 @@ type NewEmployeeForm = {
   middle_name: string;
   last_name: string;
   place_of_birth: string;
-  birthdate: string; // yyyy-mm-dd
-  date_hired: string; // yyyy-mm-dd (Employment Date)
+  birthdate: string;
+  date_hired: string;
   gender: string;
   position: string;
-  department: string; // School / Office
+  department: string;
+};
+
+type Page<T> = {
+  data: T[];
+  current_page: number;
+  last_page: number;
+  total: number;
+  per_page: number;
 };
 
 const emptyForm: NewEmployeeForm = {
@@ -146,66 +152,93 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/**
- * Letters-only name sanitizer (Unicode safe)
- */
 function lettersOnlyName(value: string) {
-  const cleaned = value.replace(/[^\p{L}\s-]+/gu, "");
-  return cleaned.replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[^\p{L}\s-]+/gu, "")
+    .replace(/ {2,}/g, " ")
+    .replace(/-+/g, "-");
 }
 
 export default function Employees() {
   const [items, setItems] = useState<Employee[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    per_page: 20,
+  });
+  const getVisiblePages = () => {
+    const total = meta.last_page;
+    const current = page;
 
-  // create modal + form state
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    if (current <= 3) {
+      return [1, 2, 3, 4, -1, total];
+    }
+
+    if (current >= total - 2) {
+      return [1, -1, total - 3, total - 2, total - 1, total];
+    }
+
+    return [1, -1, current - 1, current, current + 1, -1, total];
+  };
+
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<NewEmployeeForm>({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ NEW: filter modal (for the table)
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterDept, setFilterDept] = useState<string>(""); // School/Office
-  const [filterPos, setFilterPos] = useState<string>(""); // Position
-  const [dateFrom, setDateFrom] = useState<string>(""); // Employment Date From
-  const [dateTo, setDateTo] = useState<string>(""); // Employment Date To
+  const [filterDept, setFilterDept] = useState<string>("");
+  const [filterPos, setFilterPos] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
-  // report modal + filters (kept as-is)
   const [reportOpen, setReportOpen] = useState(false);
   const [yearsMin, setYearsMin] = useState<string>("");
   const [yearsMax, setYearsMax] = useState<string>("");
   const [downloading, setDownloading] = useState(false);
 
-  const load = async () => {
+  const load = async (p = 1) => {
     setLoading(true);
     try {
-      const { data } = await api.get("/employees", {
+      const { data } = await api.get<Page<Employee>>("/employees", {
         params: {
           q: q || undefined,
-
-          // ✅ table filters
           department: filterDept || undefined,
           position: filterPos || undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
-
-          // (optional) keep years filters if your backend supports it
           years_min: yearsMin ? Number(yearsMin) : undefined,
           years_max: yearsMax ? Number(yearsMax) : undefined,
+          page: p,
+          per_page: 20,
         },
       });
-      setItems((data?.data ?? data) as Employee[]);
+
+      setItems((data as any).data ?? []);
+      setMeta({
+        current_page: Number((data as any).current_page ?? 1),
+        last_page: Number((data as any).last_page ?? 1),
+        total: Number((data as any).total ?? 0),
+        per_page: Number((data as any).per_page ?? 20),
+      });
+      setPage(Number((data as any).current_page ?? 1));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    load(); // initial load
+    load(1);
 
-    const onDataChanged = () => load();
+    const onDataChanged = () => load(page);
     window.addEventListener("app:data-changed", onDataChanged);
     return () => window.removeEventListener("app:data-changed", onDataChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,7 +277,13 @@ export default function Employees() {
     setSaving(true);
     setErr(null);
     try {
-      const payload = { ...form };
+      const payload = {
+        ...form,
+        first_name: form.first_name.trim().replace(/\s+/g, " "),
+        middle_name: form.middle_name.trim().replace(/\s+/g, " "),
+        last_name: form.last_name.trim().replace(/\s+/g, " "),
+      };
+
       const { data } = await api.post("/employees", payload);
 
       setOpen(false);
@@ -254,7 +293,7 @@ export default function Employees() {
       if (id) {
         window.location.hash = `#/employee/${id}`;
       } else {
-        load();
+        load(1);
       }
 
       window.dispatchEvent(new Event("app:data-changed"));
@@ -306,7 +345,6 @@ export default function Employees() {
     setDateTo("");
   };
 
-  // ✅ NEW: reset only the table filter modal controls
   const resetTableFilters = () => {
     setFilterDept("");
     setFilterPos("");
@@ -316,17 +354,15 @@ export default function Employees() {
 
   const applyTableFilters = async () => {
     setFilterOpen(false);
-    await load();
+    await load(1);
   };
 
   return (
     <div className="light-dash">
-      {/* Page header */}
       <div className="page-header">
         <div className="page-title">Dashboard</div>
       </div>
 
-      {/* Hero tiles */}
       <div className="hero-row">
         <div
           className="tile tile-action tile-create"
@@ -344,7 +380,7 @@ export default function Employees() {
         <div className="tile tile-count" style={{ cursor: "default" }}>
           <div className="tile-icon doc" />
           <div>
-            <div className="tile-title">{items.length}</div>
+            <div className="tile-title">{meta.total}</div>
             <div className="tile-sub">
               Records <br />
               List
@@ -353,7 +389,6 @@ export default function Employees() {
         </div>
       </div>
 
-      {/* Records card */}
       <div className="records-card">
         <div className="card-head">
           <div className="card-title">RECORDS LIST</div>
@@ -366,14 +401,13 @@ export default function Employees() {
               placeholder="Search by name / position / school…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && load()}
+              onKeyDown={(e) => e.key === "Enter" && load(1)}
             />
 
-            <Button className="go-btn" onClick={load}>
+            <Button className="go-btn" onClick={() => load(1)}>
               {loading ? "…" : "Go"}
             </Button>
 
-            {/* ✅ NEW: Filter button */}
             <Button
               className="btn btn-outline"
               onClick={() => setFilterOpen(true)}
@@ -390,13 +424,7 @@ export default function Employees() {
           </div>
         </div>
 
-        <div
-          style={{
-            maxHeight: "500px",
-            overflowY: "auto",
-            overflowX: "auto",
-          }}
-        >
+        <div style={{ overflowX: "auto" }}>
           <table className="records-table">
             <thead>
               <tr>
@@ -430,6 +458,7 @@ export default function Employees() {
                 )
                   .trim()
                   .replace(/\s+/g, " ")}`.toLowerCase();
+
                 return (
                   <tr key={e.id}>
                     <td style={{ textTransform: "capitalize" }}>{full}</td>
@@ -452,9 +481,82 @@ export default function Employees() {
             </tbody>
           </table>
         </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "12px 14px",
+            borderTop: "1px solid #e9eff7",
+            background: "#fff",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <div className="muted">
+            Showing page {meta.current_page} of {meta.last_page}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button
+              className="btn btn-outline"
+              onClick={() => load(page - 1)}
+              disabled={page <= 1 || loading}
+            >
+              Prev
+            </Button>
+
+            {getVisiblePages().map((p, idx) =>
+              p === -1 ? (
+                <span
+                  key={`ellipsis-${idx}`}
+                  style={{
+                    display: "inline-grid",
+                    placeItems: "center",
+                    minWidth: 36,
+                    padding: "0 6px",
+                    color: "#6b7280",
+                  }}
+                >
+                  ...
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => load(p)}
+                  disabled={loading}
+                  style={{
+                    minWidth: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    border:
+                      p === page ? "1px solid #f97316" : "1px solid #dbe3f0",
+                    background: p === page ? "#f97316" : "#fff",
+                    color: p === page ? "#fff" : "#17325c",
+                    fontWeight: 600,
+                    cursor: loading ? "not-allowed" : "pointer",
+                    opacity: loading ? 0.7 : 1,
+                    padding: "0 12px",
+                  }}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+
+            <Button
+              className="btn btn-outline"
+              onClick={() => load(page + 1)}
+              disabled={page >= meta.last_page || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </div>
 
-      {/* ===================== TABLE FILTER MODAL (NEW) ===================== */}
       <OverlayModal
         open={filterOpen}
         title="Filter Records"
@@ -540,7 +642,6 @@ export default function Employees() {
         </div>
       </OverlayModal>
 
-      {/* ===================== REPORT MODAL ===================== */}
       <OverlayModal
         open={reportOpen}
         title="Generate Employee Report"
@@ -642,7 +743,6 @@ export default function Employees() {
         </div>
       </OverlayModal>
 
-      {/* ===================== CREATE MODAL ===================== */}
       <OverlayModal
         open={open}
         title="Create New Record"
@@ -667,7 +767,6 @@ export default function Employees() {
         )}
 
         <div className="form-grid">
-          {/* row 1 */}
           <div>
             <label className="field-label" htmlFor="f_empno">
               Employee # *
@@ -695,7 +794,6 @@ export default function Employees() {
             />
           </div>
 
-          {/* row 2 */}
           <div>
             <label className="field-label" htmlFor="f_first">
               First Name *
@@ -724,7 +822,6 @@ export default function Employees() {
             />
           </div>
 
-          {/* row 3 */}
           <div>
             <label className="field-label" htmlFor="f_last">
               Last Name *
@@ -751,7 +848,6 @@ export default function Employees() {
             />
           </div>
 
-          {/* row 4 */}
           <div>
             <label className="field-label" htmlFor="f_birthdate">
               Birthdate *
@@ -778,7 +874,6 @@ export default function Employees() {
             />
           </div>
 
-          {/* row 5 */}
           <div>
             <label className="field-label" htmlFor="f_gender">
               Gender *
@@ -817,7 +912,6 @@ export default function Employees() {
             </Select>
           </div>
 
-          {/* row 6 */}
           <div className="full">
             <label className="field-label" htmlFor="f_school">
               School *

@@ -34,7 +34,85 @@ export default function EmployeeNew() {
   const update =
     (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-      setForm({ ...form, [k]: e.target.value });
+      setForm((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const sanitizeNameValue = (value: string) => {
+    return value
+      .replace(/[^\p{L}\s-]/gu, "")
+      .replace(/\s+/g, " ")
+      .replace(/-+/g, "-")
+      .replace(/^[-\s]+/, "");
+  };
+
+  const handleNameChange =
+    (k: "first_name" | "middle_name" | "last_name") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const cleaned = sanitizeNameValue(e.target.value);
+      setForm((prev) => ({ ...prev, [k]: cleaned }));
+    };
+
+  const handleNameKeyDown =
+    (k: "first_name" | "middle_name" | "last_name") =>
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const allowedControlKeys = [
+        "Backspace",
+        "Delete",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Tab",
+        "Home",
+        "End",
+      ];
+
+      if (allowedControlKeys.includes(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const input = e.currentTarget;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const rawNext =
+          input.value.slice(0, start) + " " + input.value.slice(end);
+        const next = sanitizeNameValue(rawNext);
+
+        setForm((prev) => ({ ...prev, [k]: next }));
+
+        requestAnimationFrame(() => {
+          const pos = Math.min(start + 1, next.length);
+          input.setSelectionRange(pos, pos);
+        });
+        return;
+      }
+
+      if (e.key === "-") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const input = e.currentTarget;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const rawNext =
+          input.value.slice(0, start) + "-" + input.value.slice(end);
+        const next = sanitizeNameValue(rawNext);
+
+        setForm((prev) => ({ ...prev, [k]: next }));
+
+        requestAnimationFrame(() => {
+          const pos = Math.min(start + 1, next.length);
+          input.setSelectionRange(pos, pos);
+        });
+        return;
+      }
+
+      if (e.key.length === 1 && !/[\p{L}]/u.test(e.key)) {
+        e.preventDefault();
+      }
+    };
 
   const save = async () => {
     setError(null);
@@ -88,7 +166,6 @@ export default function EmployeeNew() {
         )}
 
         <div className="form-grid">
-          {/* Employee # */}
           <div>
             <label className="field-label" htmlFor="employee_no">
               Employee # *
@@ -101,7 +178,6 @@ export default function EmployeeNew() {
             />
           </div>
 
-          {/* Email */}
           <div>
             <label className="field-label" htmlFor="email">
               Email *
@@ -115,7 +191,6 @@ export default function EmployeeNew() {
             />
           </div>
 
-          {/* First / Middle */}
           <div>
             <label className="field-label" htmlFor="first_name">
               First Name *
@@ -124,9 +199,11 @@ export default function EmployeeNew() {
               id="first_name"
               className="pill-input"
               value={form.first_name}
-              onChange={update("first_name")}
+              onKeyDown={handleNameKeyDown("first_name")}
+              onChange={handleNameChange("first_name")}
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="middle_name">
               Middle Name (optional)
@@ -135,11 +212,11 @@ export default function EmployeeNew() {
               id="middle_name"
               className="pill-input"
               value={form.middle_name}
-              onChange={update("middle_name")}
+              onKeyDown={handleNameKeyDown("middle_name")}
+              onChange={handleNameChange("middle_name")}
             />
           </div>
 
-          {/* Last / Place of Birth */}
           <div>
             <label className="field-label" htmlFor="last_name">
               Last Name *
@@ -148,9 +225,11 @@ export default function EmployeeNew() {
               id="last_name"
               className="pill-input"
               value={form.last_name}
-              onChange={update("last_name")}
+              onKeyDown={handleNameKeyDown("last_name")}
+              onChange={handleNameChange("last_name")}
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="place_of_birth">
               Place of Birth *
@@ -163,7 +242,6 @@ export default function EmployeeNew() {
             />
           </div>
 
-          {/* Employment Date / Gender */}
           <div>
             <label className="field-label" htmlFor="date_hired">
               Employment Date *
@@ -176,6 +254,7 @@ export default function EmployeeNew() {
               onChange={update("date_hired")}
             />
           </div>
+
           <div>
             <label className="field-label" htmlFor="gender">
               Gender *
@@ -195,7 +274,6 @@ export default function EmployeeNew() {
             </Select>
           </div>
 
-          {/* Position / School */}
           <div>
             <label className="field-label" htmlFor="position">
               Position *
@@ -214,6 +292,7 @@ export default function EmployeeNew() {
               ))}
             </Select>
           </div>
+
           <div>
             <label className="field-label" htmlFor="department">
               School *
@@ -226,7 +305,6 @@ export default function EmployeeNew() {
             />
           </div>
 
-          {/* Actions */}
           <div
             className="full"
             style={{

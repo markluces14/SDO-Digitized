@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use app\Models\User;
+use App\Models\User;
 
 class Employee extends Model
 {
@@ -24,6 +24,7 @@ class Employee extends Model
         'department',
         'date_hired',
     ];
+
     public function user()
     {
         return $this->hasOne(User::class, 'employee_id');
@@ -34,9 +35,6 @@ class Employee extends Model
         'date_hired' => 'date',
     ];
 
-    /**
-     * Employee has many documents
-     */
     public function documents()
     {
         return $this->hasMany(Document::class);

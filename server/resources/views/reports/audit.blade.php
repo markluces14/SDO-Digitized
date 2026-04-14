@@ -193,10 +193,26 @@
             <tbody>
                 @forelse($logs as $log)
                     @php
-                        // Owner fallback:
-                        $owner =
-                            optional($log->employee)->full_name ??
-                            (optional(optional($log->document)->employee)->full_name ?? '—');
+                        $ownerEmployee = $log->employee ?: optional($log->document)->employee;
+
+                        if ($ownerEmployee) {
+                            $firstMiddle = trim(
+                                collect([$ownerEmployee->first_name, $ownerEmployee->middle_name])
+                                    ->filter()
+                                    ->implode(' '),
+                            );
+
+                            $owner = trim(
+                                collect([
+                                    $ownerEmployee->last_name ? $ownerEmployee->last_name . ',' : null,
+                                    $firstMiddle,
+                                ])
+                                    ->filter()
+                                    ->implode(' '),
+                            );
+                        } else {
+                            $owner = '—';
+                        }
                     @endphp
                     <tr>
                         <td>{{ optional($log->created_at)->format('Y-m-d H:i') }}</td>

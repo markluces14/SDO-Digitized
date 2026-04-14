@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
@@ -41,7 +42,12 @@ class EmployeeController extends Controller
             });
         }
 
-        return $q->orderBy('last_name')->orderBy('first_name')->get();
+        $perPage = (int) $r->get('per_page', 20);
+
+        return $q
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate($perPage);
     }
 
     /**
@@ -57,7 +63,13 @@ class EmployeeController extends Controller
         $data = $r->validate(
             [
                 'employee_no'    => ['required', 'string', 'max:100'],
-                'email'          => ['required', 'email', 'max:255'],
+                'email'          => [
+                    'required',
+                    'email',
+                    'max:255',
+                    'unique:employees,email',
+                    'unique:users,email',
+                ],
                 'first_name'     => ['required', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
                 'middle_name'    => ['nullable', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
                 'last_name'      => ['required', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
@@ -69,13 +81,13 @@ class EmployeeController extends Controller
                 'date_hired'     => ['required', 'date'],
             ],
             [
-                'first_name.regex'  => 'First name may contain letters only (including ñ), spaces, and hyphen.',
-                'middle_name.regex' => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
-                'last_name.regex'   => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
+                'email.unique'       => 'This email is already being used.',
+                'first_name.regex'   => 'First name may contain letters only (including ñ), spaces, and hyphen.',
+                'middle_name.regex'  => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
+                'last_name.regex'    => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
             ]
         );
 
-        // Normalize spacing in names
         foreach (['first_name', 'middle_name', 'last_name'] as $k) {
             if (isset($data[$k])) {
                 $data[$k] = preg_replace('/\s+/u', ' ', trim($data[$k]));
@@ -83,37 +95,17 @@ class EmployeeController extends Controller
         }
 
         $emp = DB::transaction(function () use ($data) {
-            // 1) Create employee
             $emp = Employee::create($data);
 
-            // 2) Link or create user
-            $u = User::where('email', $data['email'])->first();
-
-            if ($u) {
-                if (!$u->employee_id) {
-                    $u->employee_id = $emp->id;
-                }
-                if (!in_array(strtolower($u->role), ['admin', 'staff'], true)) {
-                    $u->role = 'employee';
-                }
-                if ($u->is_active === null) {
-                    $u->is_active = true;
-                }
-                $u->save();
-
-                return $emp;
-            }
-
-            // Generate temporary password
             $rawPass = Str::random(8);
 
             $newUser = User::create([
-                'name'        => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
-                'email'       => $data['email'],
-                'password'    => Hash::make($rawPass),
-                'role'        => 'employee',
-                'employee_id' => $emp->id,
-                'is_active'   => true,
+                'name'                 => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
+                'email'                => $data['email'],
+                'password'             => Hash::make($rawPass),
+                'role'                 => 'employee',
+                'employee_id'          => $emp->id,
+                'is_active'            => true,
                 'must_change_password' => true,
             ]);
 
@@ -141,10 +133,18 @@ class EmployeeController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        $linkedUser = User::where('employee_id', $employee->id)->first();
+
         $data = $r->validate(
             [
                 'employee_no'    => ['sometimes', 'string', 'max:100'],
-                'email'          => ['sometimes', 'email', 'max:255'],
+                'email'          => [
+                    'sometimes',
+                    'email',
+                    'max:255',
+                    Rule::unique('employees', 'email')->ignore($employee->id),
+                    Rule::unique('users', 'email')->ignore($linkedUser?->id),
+                ],
                 'first_name'     => ['sometimes', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
                 'middle_name'    => ['nullable', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
                 'last_name'      => ['sometimes', 'string', 'max:100', 'regex:/^[\p{L}\s-]+$/u'],
@@ -156,13 +156,13 @@ class EmployeeController extends Controller
                 'date_hired'     => ['sometimes', 'date'],
             ],
             [
-                'first_name.regex'  => 'First name may contain letters only (including ñ), spaces, and hyphen.',
-                'middle_name.regex' => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
-                'last_name.regex'   => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
+                'email.unique'       => 'This email is already being used.',
+                'first_name.regex'   => 'First name may contain letters only (including ñ), spaces, and hyphen.',
+                'middle_name.regex'  => 'Middle name may contain letters only (including ñ), spaces, and hyphen.',
+                'last_name.regex'    => 'Last name may contain letters only (including ñ), spaces, and hyphen.',
             ]
         );
 
-        // Normalize spacing in names
         foreach (['first_name', 'middle_name', 'last_name'] as $k) {
             if (isset($data[$k])) {
                 $data[$k] = preg_replace('/\s+/u', ' ', trim($data[$k]));
@@ -171,12 +171,8 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
-        // Sync email with user
-        if (isset($data['email'])) {
-            $linkedUser = User::where('employee_id', $employee->id)->first();
-            if ($linkedUser) {
-                $linkedUser->update(['email' => $data['email']]);
-            }
+        if (isset($data['email']) && $linkedUser) {
+            $linkedUser->update(['email' => $data['email']]);
         }
 
         return response()->json($employee->fresh());

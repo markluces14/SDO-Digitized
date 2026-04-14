@@ -14,12 +14,15 @@ export type CurrentUser = {
 export function getToken(): string | null {
   return sessionStorage.getItem(KEY);
 }
+
 export function setToken(t: string) {
   sessionStorage.setItem(KEY, t);
 }
+
 export function clearToken() {
   sessionStorage.removeItem(KEY);
   sessionStorage.removeItem(USER_KEY);
+console.trace("clearToken called");
 }
 
 export function isAuthed(): boolean {
@@ -29,6 +32,7 @@ export function isAuthed(): boolean {
 export function setCurrentUser(u: CurrentUser) {
   sessionStorage.setItem(USER_KEY, JSON.stringify(u));
 }
+
 export function getCurrentUser(): CurrentUser | null {
   const raw = sessionStorage.getItem(USER_KEY);
   try {

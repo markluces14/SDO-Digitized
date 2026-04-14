@@ -1,4 +1,3 @@
-// main.tsx
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -16,7 +15,6 @@ import ManageUsers from "./pages/ManageUsers";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import AuditLogs from "./pages/AuditLogs";
 import ChangePassword from "./pages/ChangePassword";
-import DataPrivacyModal from "./components/DataPrivacyModal";
 
 import { api } from "./lib/api";
 import {
@@ -33,10 +31,17 @@ import "./theme.css";
 /* ================= HASH ROUTER ================= */
 
 function useRoute() {
-  const [route, setRoute] = useState(window.location.hash || "#/login");
+  const initialRoute = window.location.hash || (isAuthed() ? "#/" : "#/login");
+  const [route, setRoute] = useState(initialRoute);
 
   useEffect(() => {
-    const onChange = () => setRoute(window.location.hash || "#/login");
+    if (!window.location.hash) {
+      window.location.hash = isAuthed() ? "#/" : "#/login";
+    }
+
+    const onChange = () =>
+      setRoute(window.location.hash || (isAuthed() ? "#/" : "#/login"));
+
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
@@ -50,13 +55,9 @@ function useBootstrapAuth(): boolean {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // ⛔ Do NOT bootstrap auth on login/logout pages
     const hash = window.location.hash;
-    if (
-      hash.startsWith("#/login") ||
-      hash.startsWith("#/logout") ||
-      hash.startsWith("#/change-password")
-    ) {
+
+    if (hash.startsWith("#/logout")) {
       setReady(true);
       return;
     }
@@ -71,9 +72,15 @@ function useBootstrapAuth(): boolean {
       try {
         const { data: me } = await api.get("/me");
         setCurrentUser(me);
-      } catch {
-        clearToken();
-        window.location.hash = "#/login";
+      } catch (e: any) {
+        const status = e?.response?.status;
+
+        console.log("BOOTSTRAP /me failed:", status, e?.response?.data);
+
+        if (status === 401 || status === 419) {
+          clearToken();
+          window.location.hash = "#/login";
+        }
       } finally {
         setReady(true);
       }
@@ -92,7 +99,6 @@ function AuthedRoutes({
   route: string;
   me: CurrentUser | null;
 }) {
-  // Employee default landing
   useEffect(() => {
     if (me?.role === "employee" && me.employee_id) {
       if (route === "#/" || route === "" || route === "#/employees") {
@@ -101,27 +107,26 @@ function AuthedRoutes({
     }
   }, [route, me]);
 
-  if (route === "#/employee/new" || route.startsWith("#/employee/new"))
-    return <EmployeeNew />;
-
-  if (route.startsWith("#/me")) return <EmployeeDashboard />;
-
-  if (/^#\/employee\/\d+$/.test(route)) return <EmployeeDetail />;
-
-  // 🔐 ADMIN / STAFF ONLY
-  if (route.startsWith("#/audit-logs")) {
-    if (me?.role !== "admin" && me?.role !== "staff") {
-      return <Employees />;
-    }
-    return <AuditLogs />;
-  }
-
-  // 🔒 Force password change
   if (me?.must_change_password) {
     if (!route.startsWith("#/change-password")) {
       window.location.hash = "#/change-password";
       return null;
     }
+  }
+
+  if (route === "#/employee/new" || route.startsWith("#/employee/new")) {
+    return <EmployeeNew />;
+  }
+
+  if (route.startsWith("#/me")) return <EmployeeDashboard />;
+
+  if (/^#\/employee\/\d+$/.test(route)) return <EmployeeDetail />;
+
+  if (route.startsWith("#/audit-logs")) {
+    if (me?.role !== "admin" && me?.role !== "staff") {
+      return <Employees />;
+    }
+    return <AuditLogs />;
   }
 
   if (route.startsWith("#/search")) return <Search />;
@@ -141,17 +146,42 @@ function Router() {
 
   if (!ready) return null;
 
-  // Public routes
-  if (route.startsWith("#/login")) return <Login />;
-  if (route.startsWith("#/logout")) return <Logout />;
-  if (route.startsWith("#/change-password")) return <ChangePassword />;
+  const authed = isAuthed();
+  const me = getCurrentUser();
 
-  if (!isAuthed()) {
-    window.location.hash = "#/login";
+  if (route.startsWith("#/logout")) return <Logout />;
+
+  if (route.startsWith("#/login")) {
+    if (authed) {
+      if (me?.must_change_password) {
+        window.location.hash = "#/change-password";
+        return null;
+      }
+
+      if (me?.role === "employee" && me.employee_id) {
+        window.location.hash = "#/me";
+      } else {
+        window.location.hash = "#/";
+      }
+      return null;
+    }
+
     return <Login />;
   }
 
-  const me = getCurrentUser();
+  if (route.startsWith("#/change-password")) {
+    if (!authed) {
+      window.location.hash = "#/login";
+      return <Login />;
+    }
+
+    return <ChangePassword />;
+  }
+
+  if (!authed) {
+    window.location.hash = "#/login";
+    return <Login />;
+  }
 
   return (
     <AppShell>

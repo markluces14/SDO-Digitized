@@ -47,13 +47,15 @@ class AuthController extends Controller
     public function me(Request $r)
     {
         $user = $r->user();
+
         return response()->json([
-            'id'          => $user->id,
-            'name'        => $user->name,
-            'email'       => $user->email,
-            'role'        => $user->role,
-            'is_active'   => $user->is_active,
-            'employee_id' => $user->employee_id, // ✅ include this
+            'id'                   => $user->id,
+            'name'                 => $user->name,
+            'email'                => $user->email,
+            'role'                 => $user->role,
+            'is_active'            => (bool) $user->is_active,
+            'employee_id'          => $user->employee_id,
+            'must_change_password' => (bool) $user->must_change_password,
         ]);
     }
 
@@ -88,15 +90,22 @@ class AuthController extends Controller
     }
     public function changeMyPassword(Request $r)
     {
-        $r->validate([
-            'current_password' => 'required',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
         $user = $r->user();
 
-        if (! Hash::check($r->current_password, $user->password)) {
-            return response()->json(['message' => 'Current password incorrect'], 422);
+        $rules = [
+            'password' => 'required|min:8|confirmed',
+        ];
+
+        if (! $user->must_change_password) {
+            $rules['current_password'] = 'required';
+        }
+
+        $r->validate($rules);
+
+        if (! $user->must_change_password) {
+            if (! Hash::check($r->current_password, $user->password)) {
+                return response()->json(['message' => 'Current password incorrect'], 422);
+            }
         }
 
         $user->update([

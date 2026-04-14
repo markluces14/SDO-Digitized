@@ -4,6 +4,7 @@ import type { Employee, Document } from "../types";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
 import Button from "../components/ui/Button";
+import { getCurrentUser } from "../lib/auth";
 
 /* ---------------- helpers ---------------- */
 
@@ -86,6 +87,7 @@ const TITLE_TO_TAG: Record<string, string> = {
   "Disciplinary Action Documents (if any)": "Performance & Discipline",
   "Contract of Service (if applicable)": "Employment",
 };
+
 const FILTER_TAG_OPTIONS = [
   "Employment",
   "Personal Records",
@@ -94,6 +96,17 @@ const FILTER_TAG_OPTIONS = [
   "Health & Clearance",
   "Qualifications",
 ] as const;
+
+const POSITION_OPTIONS = [
+  "Teacher",
+  "Principal",
+  "Professor I",
+  "Professor II",
+  "Professor III",
+  "Professor IV",
+] as const;
+
+const GENDER_OPTIONS = ["Male", "Female"] as const;
 
 /* ---------------- modal ---------------- */
 
@@ -266,33 +279,131 @@ function FilterModal({
 
 export default function EmployeeDetail() {
   const id = getEmployeeIdFromHash();
+  const me = getCurrentUser();
+  const canEditInfo = me?.role === "admin" || me?.role === "staff";
+
+  const [changeConfirmOpen, setChangeConfirmOpen] = useState(false);
+  const [changeTargetDocId, setChangeTargetDocId] = useState<number | null>(
+    null,
+  );
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // upload state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    employee_no: "",
+    email: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    place_of_birth: "",
+    birthdate: "",
+    gender: "",
+    position: "",
+    department: "",
+    date_hired: "",
+  });
+
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // change-file inputs
   const changeInputsRef = useRef<Record<number, HTMLInputElement | null>>({});
 
-  // delete confirm modal
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMode, setConfirmMode] = useState<"soft" | "trash">("soft");
   const [confirmDocId, setConfirmDocId] = useState<number | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
-  // search + filter
   const [searchText, setSearchText] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterTitle, setFilterTitle] = useState("");
   const [filterTag, setFilterTag] = useState("");
+
+  const sanitizeNameValue = (value: string) => {
+    return value
+      .replace(/[^\p{L}\s-]/gu, "")
+      .replace(/\s+/g, " ")
+      .replace(/-+/g, "-")
+      .replace(/^[-\s]+/, "");
+  };
+
+  const handleEditNameChange =
+    (k: "first_name" | "middle_name" | "last_name") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const cleaned = sanitizeNameValue(e.target.value);
+      setEditForm((prev) => ({ ...prev, [k]: cleaned }));
+    };
+
+  const handleEditNameKeyDown =
+    (k: "first_name" | "middle_name" | "last_name") =>
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      const allowedControlKeys = [
+        "Backspace",
+        "Delete",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Tab",
+        "Home",
+        "End",
+      ];
+
+      if (allowedControlKeys.includes(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const input = e.currentTarget;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const rawNext =
+          input.value.slice(0, start) + " " + input.value.slice(end);
+        const next = sanitizeNameValue(rawNext);
+
+        setEditForm((prev) => ({ ...prev, [k]: next }));
+
+        requestAnimationFrame(() => {
+          const pos = Math.min(start + 1, next.length);
+          input.setSelectionRange(pos, pos);
+        });
+        return;
+      }
+
+      if (e.key === "-") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const input = e.currentTarget;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const rawNext =
+          input.value.slice(0, start) + "-" + input.value.slice(end);
+        const next = sanitizeNameValue(rawNext);
+
+        setEditForm((prev) => ({ ...prev, [k]: next }));
+
+        requestAnimationFrame(() => {
+          const pos = Math.min(start + 1, next.length);
+          input.setSelectionRange(pos, pos);
+        });
+        return;
+      }
+
+      if (e.key.length === 1 && !/[\p{L}]/u.test(e.key)) {
+        e.preventDefault();
+      }
+    };
 
   const load = async () => {
     if (!id) return;
@@ -321,6 +432,55 @@ export default function EmployeeDetail() {
     load();
   }, [id]);
 
+  const openEditInfo = () => {
+    if (!employee) return;
+    setEditErr(null);
+    setEditForm({
+      employee_no: (employee as any).employee_no ?? "",
+      email: (employee as any).email ?? "",
+      first_name: (employee as any).first_name ?? "",
+      middle_name: (employee as any).middle_name ?? "",
+      last_name: (employee as any).last_name ?? "",
+      place_of_birth: (employee as any).place_of_birth ?? "",
+      birthdate: (employee as any).birthdate ?? "",
+      gender: (employee as any).gender ?? "",
+      position: (employee as any).position ?? "",
+      department: (employee as any).department ?? "",
+      date_hired: (employee as any).date_hired ?? "",
+    });
+    setEditOpen(true);
+  };
+
+  const saveEditInfo = async () => {
+    setEditErr(null);
+    setEditSaving(true);
+    try {
+      await api.put(`/employees/${id}`, {
+        employee_no: editForm.employee_no,
+        email: editForm.email,
+        first_name: editForm.first_name,
+        middle_name: editForm.middle_name,
+        last_name: editForm.last_name,
+        place_of_birth: editForm.place_of_birth,
+        birthdate: editForm.birthdate,
+        gender: editForm.gender,
+        position: editForm.position,
+        department: editForm.department,
+        date_hired: editForm.date_hired,
+      });
+
+      setEditOpen(false);
+      await load();
+      window.dispatchEvent(new Event("app:data-changed"));
+    } catch (e: any) {
+      setEditErr(
+        e?.response?.data?.message || "Failed to update employee info.",
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const displayName = (() => {
     if (!employee) return `Employee #${id}`;
     const ln = (employee as any).last_name;
@@ -341,20 +501,17 @@ export default function EmployeeDetail() {
     return docs.filter((d) => {
       const dTitle = String(d.title ?? "");
       const dTags = (d.tags ?? []).map((t: any) => String(t.name));
-      const dTagsLower = dTags.map((x) => x.toLowerCase());
 
-      // filters (dropdown)
       if (filterTitle && dTitle !== filterTitle) return false;
       if (filterTag && !dTags.includes(filterTag)) return false;
 
-      // search (free text)
       if (!s) return true;
       const hay = `${dTitle} ${dTags.join(" ")}`.toLowerCase();
       return hay.includes(s);
     });
   }, [docs, searchText, filterTitle, filterTag]);
 
-  /* ---------------- actions ---------------- */
+  const uploadedDocs = docs.filter((d: any) => !d.deleted_at);
 
   const upload = async () => {
     setErr(null);
@@ -421,16 +578,8 @@ export default function EmployeeDetail() {
       let fname = parseFilenameFromDisposition(cd) || "document";
 
       if (employee) {
-        const ln =
-          (employee as any).last_name ||
-          (employee as any).lname ||
-          (employee as any).surname ||
-          "";
-        const fn =
-          (employee as any).first_name ||
-          (employee as any).fname ||
-          (employee as any).given_name ||
-          "";
+        const ln = (employee as any).last_name || "";
+        const fn = (employee as any).first_name || "";
         const empName = [ln, fn].filter(Boolean).join(", ");
 
         const doc = docs.find((d) => d.id === docId);
@@ -503,7 +652,25 @@ export default function EmployeeDetail() {
   };
 
   const triggerChangeFile = (docId: number) => {
-    changeInputsRef.current[docId]?.click();
+    setChangeTargetDocId(docId);
+    setChangeConfirmOpen(true);
+  };
+
+  const confirmChangeFile = () => {
+    if (!changeTargetDocId) return;
+    setChangeConfirmOpen(false);
+
+    const target = changeInputsRef.current[changeTargetDocId];
+    if (target) {
+      target.click();
+    }
+
+    setChangeTargetDocId(null);
+  };
+
+  const cancelChangeFile = () => {
+    setChangeConfirmOpen(false);
+    setChangeTargetDocId(null);
   };
 
   const onChangeFile = async (docId: number, f?: File) => {
@@ -527,8 +694,6 @@ export default function EmployeeDetail() {
     setFilterTag("");
   };
 
-  /* ---------------- render ---------------- */
-
   return (
     <div className="light-detail">
       <div style={{ marginBottom: 10 }}>
@@ -541,17 +706,38 @@ export default function EmployeeDetail() {
       </div>
 
       <div className="page-header">
-        <div className="page-title">{displayName}</div>
-        {employee && (
-          <div className="subline">
-            ID: {(employee as any).employee_no ?? "—"} •{" "}
-            {(employee as any).position ?? "—"} —{" "}
-            {(employee as any).department ?? "—"}
+        <div>
+          <div className="page-title">{displayName}</div>
+          {employee && (
+            <div className="subline">
+              ID: {(employee as any).employee_no ?? "—"} •{" "}
+              {(employee as any).position ?? "—"} —{" "}
+              {(employee as any).department ?? "—"}
+            </div>
+          )}
+        </div>
+
+        {canEditInfo && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button className="btn btn-outline" onClick={openEditInfo}>
+              Edit Info
+            </Button>
           </div>
         )}
       </div>
 
-      {/* Upload card */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 10 }}>Uploaded Files</h3>
+
+        {loading ? (
+          <div className="muted">Loading…</div>
+        ) : (
+          <div className="muted">
+            Uploaded: <strong>{uploadedDocs.length}</strong>
+          </div>
+        )}
+      </div>
+
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Upload Document</h3>
         {err && <div style={{ color: "red", marginBottom: 10 }}>{err}</div>}
@@ -602,7 +788,6 @@ export default function EmployeeDetail() {
         </div>
       </div>
 
-      {/* Documents table */}
       <div className="card">
         <div
           style={{
@@ -616,7 +801,6 @@ export default function EmployeeDetail() {
         >
           <h3 style={{ marginTop: 0, marginBottom: 0 }}>Documents</h3>
 
-          {/* Search + Filter controls */}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <Input
               className="thin-search"
@@ -642,7 +826,6 @@ export default function EmployeeDetail() {
           </div>
         )}
 
-        {/* Active filter chips */}
         {(filterTitle || filterTag) && (
           <div
             style={{
@@ -782,13 +965,12 @@ export default function EmployeeDetail() {
         </table>
       </div>
 
-      {/* Filter modal */}
       <FilterModal
         open={filterOpen}
         titleValue={filterTitle}
         tagValue={filterTag}
         titleOptions={Array.from(TITLE_OPTIONS)}
-        tagOptions={Array.from(FILTER_TAG_OPTIONS)} // ✅ fixed list
+        tagOptions={Array.from(FILTER_TAG_OPTIONS)}
         setTitleValue={setFilterTitle}
         setTagValue={setFilterTag}
         onClose={() => setFilterOpen(false)}
@@ -796,7 +978,6 @@ export default function EmployeeDetail() {
         onReset={resetFilter}
       />
 
-      {/* Delete confirmation modal */}
       <ConfirmModal
         open={confirmOpen}
         title={confirmMode === "trash" ? "Permanent Delete" : "Delete Document"}
@@ -815,6 +996,218 @@ export default function EmployeeDetail() {
         }}
         onConfirm={runConfirmedDelete}
       />
+
+      <ConfirmModal
+        open={changeConfirmOpen}
+        title="Change File"
+        message="Are you sure you want to replace this file?"
+        confirmText="Yes, Change File"
+        confirmClassName="btn btn-primary"
+        onCancel={cancelChangeFile}
+        onConfirm={confirmChangeFile}
+      />
+
+      {editOpen && (
+        <div className="ui-modal__backdrop" onClick={() => setEditOpen(false)}>
+          <div
+            className="ui-modal__panel"
+            style={{ width: 760, maxWidth: "96vw" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="ui-modal__header">
+              <div className="ui-modal__title">Edit Employee Info</div>
+              <button
+                className="ui-modal__close"
+                onClick={() => setEditOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="ui-modal__body">
+              {editErr && (
+                <div
+                  style={{
+                    marginBottom: 10,
+                    background: "#fff4f4",
+                    border: "1px solid #f0caca",
+                    color: "#7d1b1b",
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                  }}
+                >
+                  {editErr}
+                </div>
+              )}
+
+              <div className="form-grid">
+                <div>
+                  <label className="field-label">Employee # *</label>
+                  <Input
+                    value={editForm.employee_no}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        employee_no: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Email *</label>
+                  <Input
+                    value={editForm.email}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">First Name *</label>
+                  <Input
+                    value={editForm.first_name}
+                    onKeyDown={handleEditNameKeyDown("first_name")}
+                    onChange={handleEditNameChange("first_name")}
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Middle Name</label>
+                  <Input
+                    value={editForm.middle_name}
+                    onKeyDown={handleEditNameKeyDown("middle_name")}
+                    onChange={handleEditNameChange("middle_name")}
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Last Name *</label>
+                  <Input
+                    value={editForm.last_name}
+                    onKeyDown={handleEditNameKeyDown("last_name")}
+                    onChange={handleEditNameChange("last_name")}
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Place of Birth *</label>
+                  <Input
+                    value={editForm.place_of_birth}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        place_of_birth: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Birthdate *</label>
+                  <Input
+                    type="date"
+                    value={editForm.birthdate}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        birthdate: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Employment Date *</label>
+                  <Input
+                    type="date"
+                    value={editForm.date_hired}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        date_hired: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label className="field-label">Gender *</label>
+                  <Select
+                    value={editForm.gender}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        gender: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">— Select —</option>
+                    {GENDER_OPTIONS.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="field-label">Position *</label>
+                  <Select
+                    value={editForm.position}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        position: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">— Select —</option>
+                    {POSITION_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="full">
+                  <label className="field-label">School / Department *</label>
+                  <Input
+                    value={editForm.department}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        department: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="ui-modal__footer">
+              <Button
+                className="btn btn-outline"
+                onClick={() => setEditOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="btn btn-primary"
+                onClick={saveEditInfo}
+                disabled={editSaving}
+              >
+                {editSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,9 +15,13 @@ export default function ChangePassword() {
     setErr(null);
     setOk(null);
 
-    if (!p1 || p1.length < 8)
+    if (!p1 || p1.length < 8) {
       return setErr("Password must be at least 8 characters.");
-    if (p1 !== p2) return setErr("Passwords do not match.");
+    }
+
+    if (p1 !== p2) {
+      return setErr("Passwords do not match.");
+    }
 
     setSaving(true);
     try {
@@ -26,7 +30,6 @@ export default function ChangePassword() {
         password_confirmation: p2,
       });
 
-      // refresh /me so must_change_password becomes false in frontend cache
       const { data: me } = await api.get("/me");
       setCurrentUser(me);
 
@@ -40,54 +43,71 @@ export default function ChangePassword() {
   };
 
   return (
-    <div className="light-detail">
-      <div className="page-header">
-        <div className="page-title">Change Password</div>
-      </div>
-
-      <div className="card" style={{ maxWidth: 520 }}>
-        <div className="muted" style={{ marginBottom: 10 }}>
-          For security, you must change your temporary password before
-          continuing.
+    <div
+      className="light-detail"
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 540 }}>
+        <div className="page-title" style={{ marginBottom: 18 }}>
+          Change Password
         </div>
 
-        {err && <div style={{ marginBottom: 10, color: "#7d1b1b" }}>{err}</div>}
-        {ok && <div style={{ marginBottom: 10, color: "#1b7d3a" }}>{ok}</div>}
-
-        <div className="form-grid">
-          <div className="full">
-            <label className="field-label">New Password</label>
-            <Input
-              type="password"
-              value={p1}
-              onChange={(e) => setP1(e.target.value)}
-            />
+        <div className="card">
+          <div className="muted" style={{ marginBottom: 10 }}>
+            For security, you must change your temporary password before
+            continuing.
           </div>
 
-          <div className="full">
-            <label className="field-label">Confirm Password</label>
-            <Input
-              type="password"
-              value={p2}
-              onChange={(e) => setP2(e.target.value)}
-            />
+          {err && (
+            <div style={{ marginBottom: 10, color: "#7d1b1b" }}>{err}</div>
+          )}
+          {ok && <div style={{ marginBottom: 10, color: "#1b7d3a" }}>{ok}</div>}
+
+          <div className="form-grid">
+            <div className="full">
+              <label className="field-label">New Password</label>
+              <Input
+                type="password"
+                value={p1}
+                onChange={(e) => setP1(e.target.value)}
+              />
+            </div>
+
+            <div className="full">
+              <label className="field-label">Confirm Password</label>
+              <Input
+                type="password"
+                value={p2}
+                onChange={(e) => setP2(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save Password"}
-          </Button>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Button
+              className="btn btn-primary"
+              onClick={save}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save Password"}
+            </Button>
 
-          <Button
-            className="btn btn-outline"
-            onClick={() => {
-              clearToken();
-              window.location.hash = "#/login";
-            }}
-          >
-            Logout
-          </Button>
+            <Button
+              className="btn btn-outline"
+              onClick={() => {
+                clearToken();
+                window.location.hash = "#/login";
+              }}
+            >
+              Logout
+            </Button>
+          </div>
         </div>
       </div>
     </div>
