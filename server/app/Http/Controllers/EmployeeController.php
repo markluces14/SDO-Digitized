@@ -41,7 +41,7 @@ class EmployeeController extends Controller
             });
         }
 
-        return $q->orderBy('last_name')->orderBy('first_name')->paginate(20);
+        return $q->orderBy('last_name')->orderBy('first_name')->get();
     }
 
     /**

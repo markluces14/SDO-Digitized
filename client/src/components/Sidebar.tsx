@@ -63,7 +63,10 @@ export default function Sidebar() {
 
         <div className="sidebar-footer">
           <a href="#/logout" className="nav-link">
-            … Log Out …
+            <span role="img" aria-label="logout" style={{ marginRight: "8px" }}>
+              🚪
+            </span>
+            Log Out
           </a>
         </div>
       </aside>
@@ -137,7 +140,10 @@ export default function Sidebar() {
 
       <div className="sidebar-footer">
         <a href="#/logout" className="nav-link">
-          … Log Out …
+          <span role="img" aria-label="logout" style={{ marginRight: "8px" }}>
+            🚪
+          </span>
+          Log Out
         </a>
       </div>
     </aside>

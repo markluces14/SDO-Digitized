@@ -148,11 +148,6 @@ function downloadBlob(blob: Blob, filename: string) {
 
 /**
  * Letters-only name sanitizer (Unicode safe)
- * - allows all letters (A–Z, a–z, ñ, Ñ, á, é, í, ó, ú, etc.)
- * - allows spaces (e.g., "De la Cruz")
- * - allows hyphen (e.g., "Anne-Marie")
- * - removes numbers and other special characters
- * - collapses multiple spaces into one
  */
 function lettersOnlyName(value: string) {
   const cleaned = value.replace(/[^\p{L}\s-]+/gu, "");
@@ -170,10 +165,15 @@ export default function Employees() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // report modal + filters
+  // ✅ NEW: filter modal (for the table)
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterDept, setFilterDept] = useState<string>(""); // School/Office
+  const [filterPos, setFilterPos] = useState<string>(""); // Position
+  const [dateFrom, setDateFrom] = useState<string>(""); // Employment Date From
+  const [dateTo, setDateTo] = useState<string>(""); // Employment Date To
+
+  // report modal + filters (kept as-is)
   const [reportOpen, setReportOpen] = useState(false);
-  const [filterDept, setFilterDept] = useState<string>("");
-  const [filterPos, setFilterPos] = useState<string>("");
   const [yearsMin, setYearsMin] = useState<string>("");
   const [yearsMax, setYearsMax] = useState<string>("");
   const [downloading, setDownloading] = useState(false);
@@ -183,9 +183,15 @@ export default function Employees() {
     try {
       const { data } = await api.get("/employees", {
         params: {
-          q,
+          q: q || undefined,
+
+          // ✅ table filters
           department: filterDept || undefined,
           position: filterPos || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+
+          // (optional) keep years filters if your backend supports it
           years_min: yearsMin ? Number(yearsMin) : undefined,
           years_max: yearsMax ? Number(yearsMax) : undefined,
         },
@@ -251,7 +257,6 @@ export default function Employees() {
         load();
       }
 
-      // optional: if you want list page to refresh elsewhere
       window.dispatchEvent(new Event("app:data-changed"));
     } catch (e: any) {
       const msg =
@@ -274,6 +279,8 @@ export default function Employees() {
           position: filterPos || undefined,
           years_min: yearsMin ? Number(yearsMin) : undefined,
           years_max: yearsMax ? Number(yearsMax) : undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
         },
         responseType: "blob",
         validateStatus: (s) => s >= 200 && s < 400,
@@ -295,6 +302,21 @@ export default function Employees() {
     setFilterPos("");
     setYearsMin("");
     setYearsMax("");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  // ✅ NEW: reset only the table filter modal controls
+  const resetTableFilters = () => {
+    setFilterDept("");
+    setFilterPos("");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const applyTableFilters = async () => {
+    setFilterOpen(false);
+    await load();
   };
 
   return (
@@ -306,7 +328,10 @@ export default function Employees() {
 
       {/* Hero tiles */}
       <div className="hero-row">
-        <div className="tile tile-action" onClick={() => setOpen(true)}>
+        <div
+          className="tile tile-action tile-create"
+          onClick={() => setOpen(true)}
+        >
           <div className="tile-icon">
             <span className="plus">＋</span>
           </div>
@@ -320,7 +345,10 @@ export default function Employees() {
           <div className="tile-icon doc" />
           <div>
             <div className="tile-title">{items.length}</div>
-            <div className="tile-sub">Records List</div>
+            <div className="tile-sub">
+              Records <br />
+              List
+            </div>
           </div>
         </div>
       </div>
@@ -345,6 +373,14 @@ export default function Employees() {
               {loading ? "…" : "Go"}
             </Button>
 
+            {/* ✅ NEW: Filter button */}
+            <Button
+              className="btn btn-outline"
+              onClick={() => setFilterOpen(true)}
+            >
+              Filter
+            </Button>
+
             <Button
               className="btn btn-outline"
               onClick={() => setReportOpen(true)}
@@ -354,61 +390,155 @@ export default function Employees() {
           </div>
         </div>
 
-        <table className="records-table">
-          <thead>
-            <tr>
-              <th>
-                <span className="th-ico user" /> Name
-              </th>
-              <th>Position</th>
-              <th>
-                <span className="th-ico school" /> School/Office
-              </th>
-              <th>
-                <span className="th-ico calendar" /> Date of First Employment
-              </th>
-              <th>
-                <span className="th-ico clip" /> File
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((e) => {
-              const hiredSrc =
-                (e as any).date_hired ||
-                (e as any).employment_date ||
-                (e as any).hired_at;
+        <div
+          style={{
+            maxHeight: "500px",
+            overflowY: "auto",
+            overflowX: "auto",
+          }}
+        >
+          <table className="records-table">
+            <thead>
+              <tr>
+                <th>
+                  <span className="th-ico user" /> Name
+                </th>
+                <th>Position</th>
+                <th>
+                  <span className="th-ico school" /> School/Office
+                </th>
+                <th>
+                  <span className="th-ico calendar" /> Date of First Employment
+                </th>
+                <th>
+                  <span className="th-ico clip" /> File
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((e) => {
+                const hiredSrc =
+                  (e as any).date_hired ||
+                  (e as any).employment_date ||
+                  (e as any).hired_at;
 
-              const hired = hiredSrc
-                ? dayjs(hiredSrc).format("MMMM DD, YYYY")
-                : "—";
-              const full = `${(e.last_name || "").trim()}, ${(
-                e.first_name || ""
-              )
-                .trim()
-                .replace(/\s+/g, " ")}`.toLowerCase();
-              return (
-                <tr key={e.id}>
-                  <td style={{ textTransform: "capitalize" }}>{full}</td>
-                  <td className="muted">{e.position ?? "—"}</td>
-                  <td className="muted">{e.department ?? "—"}</td>
-                  <td className="muted">{hired}</td>
-                  <td>
-                    <a href={`#/employee/${e.id}`}>View File</a>
+                const hired = hiredSrc
+                  ? dayjs(hiredSrc).format("MMMM DD, YYYY")
+                  : "—";
+                const full = `${(e.last_name || "").trim()}, ${(
+                  e.first_name || ""
+                )
+                  .trim()
+                  .replace(/\s+/g, " ")}`.toLowerCase();
+                return (
+                  <tr key={e.id}>
+                    <td style={{ textTransform: "capitalize" }}>{full}</td>
+                    <td className="muted">{e.position ?? "—"}</td>
+                    <td className="muted">{e.department ?? "—"}</td>
+                    <td className="muted">{hired}</td>
+                    <td>
+                      <a href={`#/employee/${e.id}`}>View File</a>
+                    </td>
+                  </tr>
+                );
+              })}
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No records found.
                   </td>
                 </tr>
-              );
-            })}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="muted">
-                  No records found.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* ===================== TABLE FILTER MODAL (NEW) ===================== */}
+      <OverlayModal
+        open={filterOpen}
+        title="Filter Records"
+        onClose={() => setFilterOpen(false)}
+      >
+        <div className="form-grid">
+          <div className="full">
+            <label className="field-label">School/Office</label>
+            <Select
+              className="pill-input"
+              value={filterDept}
+              onChange={(e) => setFilterDept(e.target.value)}
+            >
+              <option value="">All Schools/Offices</option>
+              {Object.entries(SCHOOL_GROUPED).map(([label, list]) => (
+                <optgroup key={label} label={label}>
+                  {list.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </div>
+
+          <div className="full">
+            <label className="field-label">Position</label>
+            <Select
+              className="pill-input"
+              value={filterPos}
+              onChange={(e) => setFilterPos(e.target.value)}
+            >
+              <option value="">All Positions</option>
+              {POSITION_OPTIONS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="field-label">Date of Employment (From)</label>
+            <Input
+              type="date"
+              className="pill-input"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="field-label">Date of Employment (To)</label>
+            <Input
+              type="date"
+              className="pill-input"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
+
+          <div className="full muted" style={{ marginTop: 6 }}>
+            Uses your current search text too: <strong>{q || "—"}</strong>
+          </div>
+        </div>
+
+        <div className="ui-modal__footer">
+          <Button className="btn btn-outline" onClick={resetTableFilters}>
+            Reset
+          </Button>
+
+          <Button
+            className="btn btn-outline"
+            onClick={() => setFilterOpen(false)}
+          >
+            Close
+          </Button>
+
+          <Button className="btn btn-primary" onClick={applyTableFilters}>
+            Apply
+          </Button>
+        </div>
+      </OverlayModal>
 
       {/* ===================== REPORT MODAL ===================== */}
       <OverlayModal
@@ -687,7 +817,7 @@ export default function Employees() {
             </Select>
           </div>
 
-          {/* row 6 (School dropdown with grouped options) */}
+          {/* row 6 */}
           <div className="full">
             <label className="field-label" htmlFor="f_school">
               School *

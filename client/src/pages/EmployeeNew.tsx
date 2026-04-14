@@ -237,13 +237,13 @@ export default function EmployeeNew() {
             }}
           >
             <Button
-              className="btn btn-outline"
+              className="btn btn-outline btn-hover"
               onClick={() => (window.location.hash = "#/")}
             >
               Cancel
             </Button>
             <Button
-              className="btn btn-primary"
+              className="btn btn-primary btn-hover"
               onClick={save}
               disabled={saving}
             >

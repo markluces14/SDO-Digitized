@@ -99,7 +99,14 @@ export default function Topbar() {
   };
 
   return (
-    <header className="topbar">
+    <header
+      className="topbar"
+      style={{
+        top: 0,
+        background: "#fff",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+      }}
+    >
       {/* Brand (logos + text) */}
       <div className="brand">
         <div className="brand-logos">

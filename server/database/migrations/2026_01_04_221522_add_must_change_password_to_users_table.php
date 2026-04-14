@@ -8,14 +8,15 @@ return new class extends Migration {
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->boolean('must_change_password')->default(false)->after('password');
+            $table->boolean('must_change_password')->default(true)->after('password');
+            $table->timestamp('password_changed_at')->nullable()->after('must_change_password');
         });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('must_change_password');
+            $table->dropColumn(['must_change_password', 'password_changed_at']);
         });
     }
 };

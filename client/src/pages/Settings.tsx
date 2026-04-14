@@ -284,7 +284,7 @@ export default function Settings() {
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Button
-              className="btn btn-outline"
+              className="btn btn-danger"
               onClick={() => {
                 setFbSubject("");
                 setFbMessage("");
@@ -297,7 +297,7 @@ export default function Settings() {
             </Button>
 
             <Button
-              className="btn btn-primary"
+              className="btn btn-success"
               onClick={submitFeedback}
               disabled={fbSending}
             >

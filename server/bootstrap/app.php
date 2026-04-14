@@ -22,4 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions) {
         // keep this - it registers the ExceptionHandler binding
     })
+    ->withMiddleware(function ($middleware) {
+        $middleware->append(\App\Http\Middleware\ForcePasswordChange::class);
+    })
+
     ->create();

@@ -591,7 +591,11 @@ export default function EmployeeDetail() {
               type="file"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-            <Button onClick={upload} disabled={saving}>
+            <Button
+              className="btn btn-primary upload-btn"
+              onClick={upload}
+              disabled={saving}
+            >
               {saving ? "Uploading…" : "Upload"}
             </Button>
           </div>
@@ -726,7 +730,7 @@ export default function EmployeeDetail() {
                         {(d as any).deleted_at ? (
                           <>
                             <Button
-                              className="btn btn-outline btn-xs"
+                              className="btn btn-success btn-xs"
                               onClick={() => restoreDoc(d.id)}
                             >
                               Restore

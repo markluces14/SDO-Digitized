@@ -53,11 +53,13 @@ class UserController extends Controller
             'role'     => ['required', Rule::in($this->validRoles())],
         ]);
 
-        $data['role']      = strtolower($data['role']);
-        $data['password']  = Hash::make($data['password']);
-        $data['is_active'] = true;
+        // UserController@store
+        $data['password'] = Hash::make($data['password']);
+        $data['must_change_password'] = true;
+        $data['password_changed_at'] = null;
 
         $user = User::create($data);
+
 
         return response()->json($user, 201);
     }

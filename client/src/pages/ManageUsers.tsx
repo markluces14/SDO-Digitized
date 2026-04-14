@@ -250,7 +250,7 @@ export default function ManageUsers() {
                     style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
                   >
                     <Button
-                      className="btn btn-outline btn-xs"
+                      className="btn btn-success btn-xs"
                       onClick={() => openEdit(u)}
                     >
                       Edit
@@ -262,7 +262,7 @@ export default function ManageUsers() {
                       Reset Password
                     </Button>
                     <Button
-                      className="btn btn-outline btn-xs"
+                      className={`btn btn-xs ${u.is_active ? "btn-outline" : "btn-success"}`}
                       onClick={() => toggleActive(u)}
                     >
                       {u.is_active ? "Disable" : "Enable"}

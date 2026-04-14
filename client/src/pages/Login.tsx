@@ -41,7 +41,6 @@ export default function Login() {
   const submit = async () => {
     setError(null);
 
-    // block login until accepted (optional but usually desired)
     if (privacyOpen) {
       setError("Please read and accept the Data Privacy notice to continue.");
       return;
@@ -55,6 +54,13 @@ export default function Login() {
       const { data: me } = await api.get("/me");
       setCurrentUser(me);
 
+      // 🔐 FORCE PASSWORD CHANGE ON FIRST LOGIN
+      if (me.must_change_password) {
+        window.location.hash = "#/change-password";
+        return;
+      }
+
+      // normal navigation
       if (me.role === "employee" && me.employee_id) {
         window.location.hash = "#/me";
       } else {

@@ -13,31 +13,35 @@ class AuthController extends Controller
     /** POST /api/login */
     public function login(Request $r)
     {
-        $data = $r->validate([
-            'email'    => ['required', 'email'],
-            'password' => ['required', 'string'],
+        $r->validate([
+            'email' => 'required|email',
+            'password' => 'required',
         ]);
 
-        /** @var User|null $user */
-        $user = User::where('email', $data['email'])->first();
+        $user = User::where('email', $r->email)->first();
 
-        if (!$user || !Hash::check($data['password'], $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['These credentials do not match our records.'],
-            ]);
+        if (! $user || ! Hash::check($r->password, $user->password)) {
+            return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        if (!$user->is_active) {
-            return response()->json(['message' => 'User is disabled.'], 403);
+        if (! $user->is_active) {
+            return response()->json(['message' => 'Account disabled'], 403);
         }
 
-        $plain = $user->createToken('spa')->plainTextToken;
+        $token = $user->createToken('api')->plainTextToken;
 
         return response()->json([
-            'token' => $plain,
-            'user'  => $this->shape($user),
+            'token' => $token,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'must_change_password' => (bool) $user->must_change_password,
+            ],
         ]);
     }
+
 
     /** GET /api/me (auth:sanctum) */
     public function me(Request $r)
@@ -84,15 +88,22 @@ class AuthController extends Controller
     }
     public function changeMyPassword(Request $r)
     {
-        $u = $r->user();
-
         $r->validate([
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'current_password' => 'required',
+            'password' => 'required|min:8|confirmed',
         ]);
 
-        $u->password = Hash::make($r->password);
-        $u->must_change_password = false; // ✅ allow normal access after change
-        $u->save();
+        $user = $r->user();
+
+        if (! Hash::check($r->current_password, $user->password)) {
+            return response()->json(['message' => 'Current password incorrect'], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($r->password),
+            'must_change_password' => false,
+            'password_changed_at' => now(),
+        ]);
 
         return response()->json(['ok' => true]);
     }
